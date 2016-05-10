@@ -1,0 +1,6 @@
+Averaged accuracy across 10 runs of 10-fold cross-validation 
+on full dataset:
+0.9387283236994223
+
+on dataset with 50% queries missing:
+0.6994219653179191

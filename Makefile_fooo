@@ -1,0 +1,9 @@
+main:
+	cd ./ru/ifmo/ctddev
+	javac 
+		-classpath ../../../lib/weka-3.7.0.jar
+		-d tmpclasses
+		FSSARecSys/algorithmics/*.java;FSSARevSys/alternative/evaluation/classification/*.java;
+		FSSARevSys/alternative/evaluation/clustering/*.java;FSSARevSys/alternative/evaluation/*.java;
+		FSSARecSys/alternative/internal/FSSClustering/*.java;FSSARecSys/alternative/internal/*.java;
+		FSSARecSys/alternative/*.java;FSSARecSys/*.java;

@@ -1,0 +1,8 @@
+full instances: 
+Averaged accuracy: 0.712941176470589
+instances with missing:
+Averaged accuracy: 0.6497647058823529
+
+% NUMBER OF EXAMPLES = 946
+% 
+% NUMBER OF ATTRIBUTES = 18

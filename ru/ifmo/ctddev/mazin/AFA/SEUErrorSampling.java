@@ -1,11 +1,15 @@
 package ru.ifmo.ctddev.mazin.AFA;
 
+import weka.classifiers.Classifier;
 import weka.classifiers.trees.J48;
 import weka.core.Instance;
 import weka.core.Instances;
 import weka.filters.supervised.attribute.Discretize;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -19,10 +23,12 @@ public class SEUErrorSampling {
     private QueryManager queryManager;
     private Map<Integer, Set<Integer>> possibleQueries; // list of attributes of instance with missing values
 
+    private int realPossibleQueries;
+
     private final int b; // size of query batch
 
-    private final int l; // param which controls the complexity of the search:
-                         // at each step we choose 'l' instances, and among them
+    private int esParam; // param which controls the complexity of the search:
+                         // at each step we choose 'esParam' instances, and among them
                          // choose 'b' missing queries to acquire
 
     private J48[] attrsClassifiers; // for getProb(..) computing
@@ -36,13 +42,13 @@ public class SEUErrorSampling {
 
     public SEUErrorSampling(Instances instances,
                               QueryManager queryManager,
-                              int l,
+                              int esParam,
                               int b,
                               Discretize discretizer,
                               Set<Integer> numericAttrsIndexes) {
         this.instances = new Instances(instances);
         this.queryManager = queryManager;
-        this.l = l;
+        this.esParam = esParam;
         this.b = b;
         this.discretizer = discretizer; // todo;
         this.numericAttrsIndexes = numericAttrsIndexes; // todo
@@ -51,12 +57,22 @@ public class SEUErrorSampling {
     }
 
     private void init() throws IllegalArgumentException {
-        if (l < 1 || l > instances.numInstances()) {
-            throw new IllegalArgumentException(String.format("'l' should be [1..number_of_instances(%d)]", instances.numInstances()));
+        if (esParam < 1 || esParam > instances.numInstances()) {
+            throw new IllegalArgumentException("'esParam' should be > 0");
         }
+
+        esParam = Math.min(esParam, instances.numInstances());
 
         n = instances.numInstances();
         m = instances.numAttributes() - 1;
+
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < m; ++j) {
+                if (instances.instance(i).isMissing(j)) {
+                    ++realPossibleQueries;
+                }
+            }
+        }
     }
 
     public List<Pair<List<Pair<Integer, Integer>>, J48>> perform(int k) throws Exception {
@@ -74,11 +90,9 @@ public class SEUErrorSampling {
                 batchSize = possibleQueries.size();
             }
 
-            List<Pair<Integer, Integer>> bestQueries = performStep(batchSize, classifier);
+            List<Pair<Integer, Integer>> bestQueries = concurrentPerformStep(batchSize, classifier);
             classifier = makeClassifier();
             res.add(new Pair<>(bestQueries, classifier));
-
-            updatePossibleQueries();
         }
 
         return res;
@@ -103,8 +117,46 @@ public class SEUErrorSampling {
 
         for (Pair<Integer, Integer> query : bestQueries) {
             acquireQuery(query.first, query.second);
+        }
 
-//            possibleQueries.get(query.first).remove(query.second);
+        return bestQueries;
+    }
+
+    /**
+     * Perform step with calculation score for each possible query in parallel
+     *
+     * @param batchSize
+     * @param classifier
+     * @return
+     * @throws Exception
+     */
+    private List<Pair<Integer, Integer>> concurrentPerformStep(int batchSize, J48 classifier) throws Exception {
+        attrsClassifiers = new J48[m];
+        attrsInstances = new Instances[m];
+        for (int i = 0; i < m; ++i) {
+            initClassifierForAttr(i);
+        }
+
+        List<Pair<Double, Pair<Integer, Integer>>> scores = Collections.synchronizedList(new ArrayList<>());
+        ExecutorService execSvc = Executors.newCachedThreadPool();
+        for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
+            int i = entry.getKey();
+            for (Integer j : entry.getValue()) {
+                CodeRunner runner = new CodeRunner(new Instances(instances), (J48) Classifier.makeCopy(classifier), i, j, scores);
+                execSvc.execute(runner);
+            }
+        }
+        execSvc.shutdown();
+        boolean finshed = execSvc.awaitTermination(Long.MAX_VALUE, TimeUnit.MINUTES); // todo
+
+        // Choose best 'b' queries to acquire:
+        Collections.sort(scores, (o1, o2) -> o1.first < o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
+        ArrayList<Pair<Integer, Integer>> bestQueries = scores.subList(0, batchSize).stream()
+                .map(pair -> pair.second)
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        for (Pair<Integer, Integer> query : bestQueries) {
+            acquireQuery(query.first, query.second);
         }
 
         return bestQueries;
@@ -141,11 +193,11 @@ public class SEUErrorSampling {
             }
         }
 
-        List<Integer> matchedInstances = new ArrayList<>(l);
-        if (misclassified.size() >= l) {
-            // choose random 'l' misclassified instances
+        List<Integer> matchedInstances = new ArrayList<>(esParam);
+        if (misclassified.size() >= esParam) {
+            // choose random 'esParam' misclassified instances
             Collections.shuffle(misclassified);
-            matchedInstances.addAll(misclassified.subList(0, l));
+            matchedInstances.addAll(misclassified.subList(0, esParam));
         } else {
             matchedInstances.addAll(misclassified);
 
@@ -161,7 +213,7 @@ public class SEUErrorSampling {
                 }
             }
             Collections.sort(scores, (o1, o2) -> o1.first > o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
-            int subListSize = Math.min(scores.size(), l - misclassified.size());
+            int subListSize = Math.min(scores.size(), esParam - misclassified.size());
             ArrayList<Integer> bestInstances
                     = scores.subList(0, subListSize).stream()
                     .map(pair -> pair.second)
@@ -193,19 +245,6 @@ public class SEUErrorSampling {
         }
 
         return maxProb - secondMaxProb;
-    }
-
-
-
-    /**
-     * Remove complete instances from 'possibleQueries'
-     */
-    private void updatePossibleQueries() {
-        Set<Integer> completeInstances = possibleQueries.entrySet().stream()
-                .filter(entry -> entry.getValue().isEmpty())
-                .map(Map.Entry::getKey).collect(Collectors.toSet());
-
-        completeInstances.forEach(possibleQueries::remove);
     }
 
     private void acquireQuery(int instIndex, int attrIndex) throws Exception {
@@ -328,8 +367,99 @@ public class SEUErrorSampling {
         return res;
     }
 
+    public int getPossibleQueriesNum() {
+        int res = 0;
+        for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
+            res += entry.getValue().size();
+        }
+
+        return res;
+    }
+
     public int getAllQueriesNum() {
         return n * m;
+    }
+
+    class CodeRunner implements Runnable {
+
+        public Instances instances;
+        public J48 cls;
+        public int instIndex;
+        public int attrIndex;
+        public List<Pair<Double, Pair<Integer, Integer>>> scores;
+
+        CodeRunner(Instances instances, J48 cls, int instIndex, int attrIndex, List<Pair<Double, Pair<Integer, Integer>>> scores) {
+            this.instances = instances;
+            this.cls = cls;
+            this.instIndex = instIndex;
+            this.attrIndex = attrIndex;
+            this.scores = scores;
+        }
+
+        @Override
+        public void run() {
+            try {
+                double score;
+                score = concurrentGetScore(instances, instIndex, attrIndex, cls, attrsClassifiers, attrsInstances);
+                scores.add(new Pair<>(score, new Pair<>(instIndex, attrIndex)));
+
+                cls.setUseLaplace(true);
+                cls.buildClassifier(instances);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+    }
+
+    private static double concurrentGetScore(Instances instances,
+                                             int instIndex,
+                                             int attrIndex,
+                                             J48 classifier,
+                                             J48[] attrsClassifiers,
+                                             Instances[] attrsInstances) throws Exception {
+        double score = 0.0;
+        double[] estimatedProbs = concurrentGetProbs(instances, instIndex, attrIndex, attrsClassifiers, attrsInstances);
+
+        int numValues = instances.attribute(attrIndex).numValues();
+        for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
+            score += estimatedProbs[valueIndex] *
+                    concurrentGetUtility(instances, instIndex, attrIndex, valueIndex, classifier);
+        }
+        return score;
+    }
+
+    private static double[] concurrentGetProbs(Instances instances,
+                                               int instIndex,
+                                               int attrIndex,
+                                               J48[] attrsClassifiers,
+                                               Instances[] attrsInstances) throws Exception {
+        Instance inst = new Instance(instances.instance(instIndex));
+        inst.setDataset(attrsInstances[attrIndex]);
+        return attrsClassifiers[attrIndex].distributionForInstance(inst);
+    }
+
+    private static double concurrentGetUtility(Instances instances, int instIndex, int attrIndex, double value, J48 classifier) throws Exception {
+        instances.instance(instIndex).setValue(attrIndex, value);
+        J48 newClassifier = staticMakeClassifier(instances);
+        double newAcc = DatasetFactory.calculateAccuracy(newClassifier, instances);
+        instances.instance(instIndex).setMissing(attrIndex);
+
+        double oldAcc = DatasetFactory.calculateAccuracy(classifier, instances);
+
+//        return (newAcc - oldAcc) / C[instIndex][attrIndex];
+        return newAcc - oldAcc;
+    }
+
+    private static J48 staticMakeClassifier(Instances instances) throws Exception {
+        J48 classifier = new J48();
+        classifier.setUseLaplace(true); // todo as in paper
+        classifier.buildClassifier(instances);
+        return classifier;
+    }
+
+    public int getRealPossibleQueries() {
+        return realPossibleQueries;
     }
 }
 

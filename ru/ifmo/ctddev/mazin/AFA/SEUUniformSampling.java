@@ -24,6 +24,8 @@ public class SEUUniformSampling {
     private QueryManager queryManager;
     private Map<Integer, Set<Integer>> possibleQueries; // list of attributes of instance with missing values
 
+    private int realPossibleQueries;
+
     private final int b; // size of query batch
 
     private final int alpha; // param which controls the complexity of the search, random sub-sample of
@@ -69,6 +71,8 @@ public class SEUUniformSampling {
             }
         }
 
+        realPossibleQueries = possibleQueriesAsList.size();
+
         if (alpha < 1) {
             throw new IllegalArgumentException("'alpha' should be > 1");
         }
@@ -99,7 +103,7 @@ public class SEUUniformSampling {
                 batchSize = possibleQueries.size();
             }
 
-            List<Pair<Integer, Integer>> bestQueries = performStep(batchSize, classifier);
+            List<Pair<Integer, Integer>> bestQueries = concurrentPerformStep(batchSize, classifier);
             classifier = makeClassifier();
             res.add(new Pair<>(bestQueries, classifier));
 
@@ -112,8 +116,40 @@ public class SEUUniformSampling {
     private List<Pair<Integer, Integer>> performStep(int batchSize, J48 classifier) throws Exception {
         attrsClassifiers = new J48[m]; // todo mb optimize updating - update not all
         attrsInstances = new Instances[m]; // todo mb optimize updating - update not all
-//        List<Pair<Double, Pair<Integer, Integer>>> scores = new ArrayList<>();
-        // todo
+        List<Pair<Double, Pair<Integer, Integer>>> scores = new ArrayList<>();
+        for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
+            int i = entry.getKey();
+            for (Integer j : entry.getValue()) {
+                double score = getScore(i, j, classifier);
+                scores.add(new Pair<>(score, new Pair<>(i, j)));
+            }
+        }
+        // Choose best 'b' queries to acquire:
+        Collections.sort(scores, (o1, o2) -> o1.first < o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
+        ArrayList<Pair<Integer, Integer>> bestQueries = scores.subList(0, batchSize).stream()
+                .map(pair -> pair.second)
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        for (Pair<Integer, Integer> query : bestQueries) {
+            acquireQuery(query.first, query.second);
+
+            possibleQueries.get(query.first).remove(query.second);
+        }
+
+        return bestQueries;
+    }
+
+    /**
+     * Perform step with calculation score for each possible query in parallel
+     *
+     * @param batchSize
+     * @param classifier
+     * @return
+     * @throws Exception
+     */
+    private List<Pair<Integer, Integer>> concurrentPerformStep(int batchSize, J48 classifier) throws Exception {
+        attrsClassifiers = new J48[m];
+        attrsInstances = new Instances[m];
         for (int i = 0; i < m; ++i) {
             initClassifierForAttr(i);
         }
@@ -128,7 +164,7 @@ public class SEUUniformSampling {
             }
         }
         execSvc.shutdown();
-        boolean finshed = execSvc.awaitTermination(100, TimeUnit.MINUTES);
+        boolean finshed = execSvc.awaitTermination(100, TimeUnit.MINUTES); // todo
 
         // Choose best 'b' queries to acquire:
         Collections.sort(scores, (o1, o2) -> o1.first < o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
@@ -361,8 +397,11 @@ public class SEUUniformSampling {
         return classifier;
     }
 
-}
+    public int getRealPossibleQueries() {
+        return realPossibleQueries;
+    }
 
+}
 
 
 

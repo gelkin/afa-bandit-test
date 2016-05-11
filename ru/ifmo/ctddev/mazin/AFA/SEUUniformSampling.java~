@@ -1,16 +1,11 @@
 package ru.ifmo.ctddev.mazin.AFA;
 
-import weka.classifiers.Classifier;
 import weka.classifiers.trees.J48;
 import weka.core.Instance;
 import weka.core.Instances;
-
 import weka.filters.supervised.attribute.Discretize;
 
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -112,24 +107,14 @@ public class SEUUniformSampling {
     private List<Pair<Integer, Integer>> performStep(int batchSize, J48 classifier) throws Exception {
         attrsClassifiers = new J48[m]; // todo mb optimize updating - update not all
         attrsInstances = new Instances[m]; // todo mb optimize updating - update not all
-//        List<Pair<Double, Pair<Integer, Integer>>> scores = new ArrayList<>();
-        // todo
-        for (int i = 0; i < m; ++i) {
-            initClassifierForAttr(i);
-        }
-
-        List<Pair<Double, Pair<Integer, Integer>>> scores = Collections.synchronizedList(new ArrayList<>());
-        ExecutorService execSvc = Executors.newCachedThreadPool();
+        List<Pair<Double, Pair<Integer, Integer>>> scores = new ArrayList<>();
         for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
             int i = entry.getKey();
             for (Integer j : entry.getValue()) {
-                CodeRunner runner = new CodeRunner(new Instances(instances), (J48) Classifier.makeCopy(classifier), i, j, scores);
-                execSvc.execute(runner);
+                double score = getScore(i, j, classifier);
+                scores.add(new Pair<>(score, new Pair<>(i, j)));
             }
         }
-        execSvc.shutdown();
-        boolean finshed = execSvc.awaitTermination(100, TimeUnit.MINUTES);
-
         // Choose best 'b' queries to acquire:
         Collections.sort(scores, (o1, o2) -> o1.first < o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
         ArrayList<Pair<Integer, Integer>> bestQueries = scores.subList(0, batchSize).stream()
@@ -220,10 +205,7 @@ public class SEUUniformSampling {
      */
     private double getUtility(int instIndex, int attrIndex, double value, J48 classifier) throws Exception {
         instances.instance(instIndex).setValue(attrIndex, value);
-        J48 newClassifier = new J48();
-
-
-
+        J48 newClassifier = makeClassifier();
         double newAcc = DatasetFactory.calculateAccuracy(newClassifier, instances);
         instances.instance(instIndex).setMissing(attrIndex);
 
@@ -282,87 +264,7 @@ public class SEUUniformSampling {
     public int getAllQueriesNum() {
         return n * m;
     }
-
-    class CodeRunner implements Runnable {
-
-        public Instances instances;
-        public J48 cls;
-        public int instIndex;
-        public int attrIndex;
-        public List<Pair<Double, Pair<Integer, Integer>>> scores;
-
-        CodeRunner(Instances instances, J48 cls, int instIndex, int attrIndex, List<Pair<Double, Pair<Integer, Integer>>> scores) {
-            this.instances = instances;
-            this.cls = cls;
-            this.instIndex = instIndex;
-            this.attrIndex = attrIndex;
-            this.scores = scores;
-        }
-
-        @Override
-        public void run() {
-            try {
-                double score;
-                score = concurrentGetScore(instances, instIndex, attrIndex, cls, attrsClassifiers, attrsInstances);
-                scores.add(new Pair<>(score, new Pair<>(instIndex, attrIndex)));
-
-                cls.setUseLaplace(true);
-                cls.buildClassifier(instances);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-
-    }
-
-    private static double concurrentGetScore(Instances instances,
-                                             int instIndex,
-                                             int attrIndex,
-                                             J48 classifier,
-                                             J48[] attrsClassifiers,
-                                             Instances[] attrsInstances) throws Exception {
-        double score = 0.0;
-        double[] estimatedProbs = concurrentGetProbs(instances, instIndex, attrIndex, attrsClassifiers, attrsInstances);
-
-        int numValues = instances.attribute(attrIndex).numValues();
-        for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
-            score += estimatedProbs[valueIndex] *
-                    concurrentGetUtility(instances, instIndex, attrIndex, valueIndex, classifier);
-        }
-        return score;
-    }
-
-    private static double[] concurrentGetProbs(Instances instances,
-                                               int instIndex,
-                                               int attrIndex,
-                                               J48[] attrsClassifiers,
-                                               Instances[] attrsInstances) throws Exception {
-        Instance inst = new Instance(instances.instance(instIndex));
-        inst.setDataset(attrsInstances[attrIndex]);
-        return attrsClassifiers[attrIndex].distributionForInstance(inst);
-    }
-
-    private static double concurrentGetUtility(Instances instances, int instIndex, int attrIndex, double value, J48 classifier) throws Exception {
-        instances.instance(instIndex).setValue(attrIndex, value);
-        J48 newClassifier = staticMakeClassifier(instances);
-        double newAcc = DatasetFactory.calculateAccuracy(newClassifier, instances);
-        instances.instance(instIndex).setMissing(attrIndex);
-
-        double oldAcc = DatasetFactory.calculateAccuracy(classifier, instances);
-
-//        return (newAcc - oldAcc) / C[instIndex][attrIndex];
-        return newAcc - oldAcc;
-    }
-
-    private static J48 staticMakeClassifier(Instances instances) throws Exception {
-        J48 classifier = new J48();
-        classifier.setUseLaplace(true); // todo as in paper
-        classifier.buildClassifier(instances);
-        return classifier;
-    }
-
 }
-
 
 
 

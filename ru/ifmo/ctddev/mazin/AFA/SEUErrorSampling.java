@@ -355,9 +355,6 @@ public class SEUErrorSampling {
     }
 
     private void initClassifierForAttr(int attrIndex) throws Exception {
-        if (attrIndex >= 5 && attrIndex < 8) {
-            return;
-        }
         // todo get rid of copying
         int cap = n;
         for (int i = 0; i < n; ++i) {

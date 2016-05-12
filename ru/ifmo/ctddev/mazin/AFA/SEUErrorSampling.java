@@ -250,15 +250,35 @@ public class SEUErrorSampling {
     private void acquireQuery(int instIndex, int attrIndex) throws Exception {
         Instance inst = instances.instance(instIndex);
         double value = queryManager.getValue(instIndex, attrIndex);
+        inst.setValue(attrIndex, value);
+        // todo
+//        if (!numericAttrsIndexes.contains(attrIndex)) {
+//            inst.setValue(attrIndex, value);
+//        } else {
+//            double[] cutPoints = discretizer.getCutPoints(attrIndex);
+//            int pos = Arrays.binarySearch(cutPoints, value);
+//            pos = pos >= 0 ? pos : -(pos + 1);
+//            inst.setValue(attrIndex, pos);
+//        }
+    }
 
-        if (!numericAttrsIndexes.contains(attrIndex)) {
-            inst.setValue(attrIndex, value);
-        } else {
-            double[] cutPoints = discretizer.getCutPoints(attrIndex);
-            int pos = Arrays.binarySearch(cutPoints, value);
-            pos = pos >= 0 ? pos : -(pos + 1);
-            inst.setValue(attrIndex, pos);
-        }
+    public static void acquireQuery(QueryManager queryManager,
+                                    Instances instances,
+                                    int instIndex,
+                                    int attrIndex) throws Exception {
+        Instance inst = instances.instance(instIndex);
+        double value = queryManager.getValue(instIndex, attrIndex);
+
+        inst.setValue(attrIndex, value);
+        // todo
+//        if (!numericAttrsIndexes.contains(attrIndex)) {
+//            inst.setValue(attrIndex, value);
+//        } else {
+//            double[] cutPoints = discretizer.getCutPoints(attrIndex);
+//            int pos = Arrays.binarySearch(cutPoints, value);
+//            pos = pos >= 0 ? pos : -(pos + 1);
+//            inst.setValue(attrIndex, pos);
+//        }
     }
 
     /**
@@ -335,6 +355,9 @@ public class SEUErrorSampling {
     }
 
     private void initClassifierForAttr(int attrIndex) throws Exception {
+        if (attrIndex >= 5 && attrIndex < 8) {
+            return;
+        }
         // todo get rid of copying
         int cap = n;
         for (int i = 0; i < n; ++i) {

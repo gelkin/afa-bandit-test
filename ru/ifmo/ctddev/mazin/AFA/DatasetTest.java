@@ -27,6 +27,9 @@ public class DatasetTest {
             Instances instances = dataSets.get(datasetIndex).getInstances();
             String datasetName = dataSets.get(datasetIndex).getName();
             instances.setClassIndex(instances.numAttributes() - 1);
+//            if (!test.coolDiscretizeTest(instances)) {
+//                System.out.println("Oh shi...");
+//            }
             test.printAccuracyDifference(instances, datasetName);
 
 //            Instances instances = test.deleteInstancesWithMissing(instances);
@@ -40,14 +43,12 @@ public class DatasetTest {
 ////                Pair<Map<Integer, Double>, String> methodResult = test.massiveTest(instances, datasetName);
 ////                String filename = test.writeMethodResult(methodResult, datasetName);
 //            }
-            /*
-            Pair<Map<Integer, Double>, String> methodResult = test.massiveTest(instances, datasetName);
-            String filename = test.writeMethodResult(methodResult, datasetName);
+//            Pair<Map<Integer, Double>, String> methodResult = test.massiveTest(instances, datasetName);
+//            String filename = test.writeMethodResult(methodResult, datasetName);
 ////            Pair<Map<Integer, Double>, String> methodResultTest = new Pair(test.readMethodResult(filename), "AFABandit");
-            List<Pair<Map<Integer, Double>, String>> toPlot = new ArrayList<>();
-            toPlot.add(methodResult);
-            test.plotMethodResults(toPlot, datasetName);
-            */
+//            List<Pair<Map<Integer, Double>, String>> toPlot = new ArrayList<>();
+//            toPlot.add(methodResult);
+//            test.plotMethodResults(toPlot, datasetName);
 
 
 //            test.seuIniformSamplingTest(instances);
@@ -55,6 +56,35 @@ public class DatasetTest {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public boolean coolDiscretizeTest(Instances instances) throws Exception {
+        Instances testInstances = new Instances(instances);
+
+        Discretize discretizer = new Discretize();
+        discretizer.setInputFormat(testInstances);
+        Instances discInstances = Filter.useFilter(testInstances, discretizer);
+
+        QueryManager queryManager = new SimpleQueryManager(discInstances);
+        Instances testMissing = DatasetFactory.makeWithMissingAttrsUniformly(discInstances, PERCENTS);
+
+        for (int i = 0; i < testMissing.numInstances(); ++i) {
+            for (int j = 0; j < testMissing.numAttributes(); ++j) {
+                if (testMissing.instance(i).isMissing(j)) {
+                    SEUErrorSampling.acquireQuery(queryManager, testMissing, i, j);
+                }
+            }
+        }
+
+        for (int i = 0; i < discInstances.numInstances(); ++i) {
+            for (int j = 0; j < discInstances.numAttributes(); ++j) {
+                if (discInstances.instance(i).value(j) != testMissing.instance(i).value(j)) {
+                    System.out.println("instIndex = " + i + ", attrIndex = " + j);
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     public void analyzeDataset() throws Exception {
@@ -197,33 +227,35 @@ public class DatasetTest {
     public Pair<Map<Integer, Double>, String> massiveTest(Instances instances, String datasetName) throws Exception {
         int seed = 137;
 
-        int runsNum = 10;
-        int folds = 10;
+        int runsNum = 1;
+        int folds = 4;
         double percents = PERCENTS;
         double coef = (folds - 1) / (double) folds;
         int batchSize = (int) (coef * (instances.numInstances()) * (instances.numAttributes() - 1) / 100.0); // todo 1/50 of possible queries
 
+        Random r = new Random(System.currentTimeMillis());
+        int suffixNum = r.nextInt(10000);
         // afaBandit
         //
-        Map<Integer, Double> numToAccMapBandit = DatasetFactory.afaBanditGetLerningCurve(instances, runsNum, seed, folds, percents, batchSize);
-        return new Pair(numToAccMapBandit, String.format("AFABandit-runs=%s-folds=%s", runsNum, folds));
+//        Map<Integer, Double> numToAccMapBandit = DatasetFactory.afaBanditGetLerningCurve(instances, runsNum, seed, folds, percents, batchSize);
+//        return new Pair(numToAccMapBandit, String.format("AFABandit-runs=%s-folds=%s-%s", runsNum, folds, suffixNum));
         //
         // seu uniform sampling
         /*
         int alpha = (instances.numInstances()) * (instances.numAttributes() - 1) / batchSize; // todo full
         int alpha = 13; // todo
         Map<Integer, Double> numToAccMapSEU = DatasetFactory.seuIniformSamplingGetLerningCurve(instances, runsNum, seed, folds, PERCENTS, batchSize, alpha);
-        return new Pair(numToAccMapSEU, String.format("SEU-USalpha=%s-runs=%s-folds=%s", alpha, runsNum, folds));
+        return new Pair(numToAccMapSEU, String.format("SEU-USalpha=%s-runs=%s-folds=%s-%s", alpha, runsNum, folds, suffixNum));
         */
 //        Map<Integer, Double> numToAccMapBanditSecond = DatasetFactory.afaBanditGetLerningCurve(instances, runsNum, seed, folds, PERCENTS, batchSize);
 
         // seu error sampling
-        /*
+        //
         int euParam = instances.numInstances() / 10; // todo
         Map<Integer, Double> numToAccMapSEU =
                 DatasetFactory.seuErrorSamplingGetLerningCurve(instances, runsNum, seed, folds, percents, batchSize, euParam);
-        return new Pair(numToAccMapSEU, String.format("SEU-ESparam=%s-runs=%s-folds=%s", euParam, runsNum, folds));
-        */
+        return new Pair(numToAccMapSEU, String.format("SEU-ESparam=%s-runs=%s-folds=%s-%s", euParam, runsNum, folds, suffixNum));
+        //
         // plot
 //        List<Pair<Map<Integer, Double>, String>> datasetsToPlot = new ArrayList<>();
 //         datasetsToPlot.add(new Pair(numToAccMapBandit, "AFABandit"));

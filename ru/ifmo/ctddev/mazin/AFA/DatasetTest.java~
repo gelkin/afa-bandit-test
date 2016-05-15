@@ -24,7 +24,7 @@ public class DatasetTest {
         test.readDataset();
 //        test.testInstancesFromDataset();
         try {
-            int datasetIndex = 0;
+            int datasetIndex = 3;
             Instances instances = dataSets.get(datasetIndex).getInstances();
             String datasetName = dataSets.get(datasetIndex).getName();
             instances.setClassIndex(instances.numAttributes() - 1);

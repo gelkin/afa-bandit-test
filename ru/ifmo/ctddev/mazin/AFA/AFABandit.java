@@ -9,12 +9,14 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 
-public class AFABandit {
+public class AFABandit implements AFAMethod {
     private Instances instances;
     private QueryManager queryManager;
 
     private int n; // number of instances
     private int m; // number of attributes (features)
+    private int b; // batch size to query at one step. If there are fewer than 'b'
+                   // possible queries, acquire all remaining possible queries.
 
     private int totalNumQueries; // total number of queries
 
@@ -26,9 +28,10 @@ public class AFABandit {
 
     private LinkedHashMap<Integer, Set<Integer>> possibleQueries; // list of attributes of instance with missing values
 
-    public AFABandit(Instances instances, QueryManager queryManager) {
+    public AFABandit(Instances instances, QueryManager queryManager, int b) {
         this.instances = new Instances(instances);
         this.queryManager = queryManager;
+        this.b = b;
 
         init();
     }
@@ -105,12 +108,10 @@ public class AFABandit {
      * Perform AFABandit method for active feature-value acquiring.
      *
      * @param k number of performStep running
-     * @param b batch size to query at one step. If there are fewer than 'b'
-     *          possible queries, acquire all remaining possible queries.
      * @return list of pairs (acquired queries, build classifier) for each step
      * @throws Exception
      */
-    public List<Pair<List<Pair<Integer, Integer>>, J48>> perform(int k, int b) throws Exception {
+    public List<Pair<List<Pair<Integer, Integer>>, J48>> perform(int k) throws Exception {
         J48 classifier = makeClassifier();
         List<Pair<List<Pair<Integer, Integer>>, J48>> res = new LinkedList<>();
         for (int i = 0; i < k; ++i) {
@@ -263,7 +264,7 @@ public class AFABandit {
         return m;
     }
 
-    public int getPossibleQueriesNum() {
+    public int getRealPossibleQueries() {
         int res = 0;
         for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
             res += entry.getValue().size();

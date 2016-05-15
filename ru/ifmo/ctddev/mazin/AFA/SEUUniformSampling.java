@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 * finite set of values).
 *
 */
-public class SEUUniformSampling {
+public class SEUUniformSampling implements AFAMethod {
     private Instances instances;
     private QueryManager queryManager;
     private Map<Integer, Set<Integer>> possibleQueries; // list of attributes of instance with missing values

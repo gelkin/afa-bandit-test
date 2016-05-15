@@ -158,7 +158,7 @@ public class DatasetFactory {
     }
 
     /**
-     * todo
+     * AfaBanditGetLerningCurve
      *
      * @param instances
      * @param runsNum
@@ -169,16 +169,18 @@ public class DatasetFactory {
      * @return
      * @throws Exception
      */
-    public static Map<Integer, Double> afaBanditGetLerningCurve(Instances instances,
+    public static Map<Integer, List<Double>> afaBanditGetLerningCurve(Instances instances,
                                                                 int runsNum,
                                                                 int seed,
                                                                 int folds,
                                                                 double percents,
                                                                 int batchSize) throws Exception {
         // todo
-        int iterationsNumber = 1;
+        int itersNum = 1;
 
-        ArrayList<Pair<Integer, List<Double>>> numToAcc = new ArrayList<>();
+        int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
+        Map<Integer, List<Double>> numToAccByRuns = new LinkedHashMap<>();
+        List<Pair<Integer, List<Double>>> numToAcc = new ArrayList<>();
         for (int i = 0; i < runsNum; ++i) {
             // Randomize data
             Random rand = new Random(seed + i);
@@ -190,72 +192,38 @@ public class DatasetFactory {
                 Instances train = randData.trainCV(folds, j); // not always same size
                 Instances test = randData.testCV(folds, j);
 
-                int cnt = 0; // counter for numToAcc
-
                 // Add missing
                 Instances trainMissing = DatasetFactory.makeWithMissingAttrsUniformly(train, percents);
-                System.out.println(train.numInstances());
+                System.out.println(String.format("runNum = %s, foldNum = %s", i, j));
 
                 QueryManager queryManager = new SimpleQueryManager(train);
-                AFABandit afaMethod = new AFABandit(trainMissing, queryManager);
+                AFABandit afaMethod = new AFABandit(trainMissing, queryManager, batchSize);
 
-                // Zero step
-//                System.out.print("possibleQueriesNum = " + afaMethod.getPossibleQueriesNum());
-
-                int num = afaMethod.getAllQueriesNum() - afaMethod.getPossibleQueriesNum();
-                J48 initialCls = afaMethod.makeClassifier();
-                double acc = DatasetFactory.calculateAccuracy(initialCls, test);
-                if (numToAcc.size() <= cnt) { // todo
-                    List<Double> accs = new ArrayList<>();
-                    accs.add(acc);
-                    numToAcc.add(new Pair<>(num, accs));
-                } else {
-                    numToAcc.get(cnt).second.add(acc);
-                }
-                ++cnt;
-
-
-                List<Pair<List<Pair<Integer, Integer>>, J48>> res = afaMethod.perform(iterationsNumber, batchSize);
-                J48 lastCls = new J48();
-                while (res.size() > 0) {
-                    num = num + res.get(0).first.size();
-                    acc = DatasetFactory.calculateAccuracy(res.get(0).second, test);
-                    if (numToAcc.size() <= cnt) { // todo
-                        List<Double> accs = new ArrayList<>();
-                        accs.add(acc);
-                        numToAcc.add(new Pair<>(num, accs));
-                    } else {
-                        numToAcc.get(cnt).second.add(acc);
-                    }
-                    ++cnt;
-
-                    lastCls = res.get(0).second; // todo
-//                    System.out.print(" --> " + afaMethod.getPossibleQueriesNum());
-                    res = afaMethod.perform(iterationsNumber, batchSize);
-                }
-//                System.out.println(" --end--> " + afaMethod.getPossibleQueriesNum());
-
-                if (j == folds - 1) { // todo
-                    J48 cls = lastCls;
-                    System.out.println("Super test of last classifier:");
-                    System.out.println("Acccuracy = " + DatasetFactory.calculateAccuracy(cls, test));
-                    System.out.println("_____");
-                }
+                getLearningCurveHelper(numToAcc, afaMethod, test, itersNum, folds, j, false);
             }
+
+            collectInfoFromRun(numToAcc, numToAccByRuns, allQueriesNum);
+            numToAcc.clear();
         }
 
-        int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
-        Map<Integer, Double> numToAccMap = new LinkedHashMap<>();
-        for (Pair<Integer, List<Double>> pair : numToAcc) {
-            double avgAcc = pair.second.stream().mapToDouble(val -> val).average().getAsDouble();
-            numToAccMap.put((int) (Math.round(100.0 * ((double) pair.first / (double) allQueriesNum))), avgAcc);
-//            numToAccMap.put(pair.first, avgAcc);
-        }
-
-        return numToAccMap;
+        return numToAccByRuns;
     }
 
-    public static Map<Integer, Double> seuIniformSamplingGetLerningCurve(Instances instances,
+
+    /**
+     * SeuIniformSamplingGetLerningCurve
+     *
+     * @param instances
+     * @param runsNum
+     * @param seed
+     * @param folds
+     * @param percents
+     * @param batchSize
+     * @param alpha
+     * @return
+     * @throws Exception
+     */
+    public static Map<Integer, List<Double>> seuIniformSamplingGetLerningCurve(Instances instances,
                                                                 int runsNum,
                                                                 int seed,
                                                                 int folds,
@@ -263,7 +231,7 @@ public class DatasetFactory {
                                                                 int batchSize,
                                                                 int alpha) throws Exception {
         // todo
-        int iterationsNumber = 1;
+        int itersNum = 1;
         double nowTime = System.currentTimeMillis();
 
         Set<Integer> numericAttrsIndexes = getNumericAttrsIndexes(instances);
@@ -272,7 +240,9 @@ public class DatasetFactory {
         discretizer.setInputFormat(instances);
         Instances discInstances = Filter.useFilter(instances, discretizer);
 
-        ArrayList<Pair<Integer, List<Double>>> numToAcc = new ArrayList<>();
+        int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
+        Map<Integer, List<Double>> numToAccByRuns = new LinkedHashMap<>();
+        List<Pair<Integer, List<Double>>> numToAcc = new ArrayList<>();
         for (int i = 0; i < runsNum; ++i) {
             // Randomize data
             Random rand = new Random(seed + i);
@@ -284,11 +254,9 @@ public class DatasetFactory {
                 Instances train = randData.trainCV(folds, j); // todo: not always same size
                 Instances test = randData.testCV(folds, j);
 
-                int cnt = 0; // counter for numToAcc
-
                 // Add missing
                 Instances trainMissing = DatasetFactory.makeWithMissingAttrsUniformly(train, percents);
-                System.out.println(train.numInstances());
+                System.out.println(String.format("runNum = %s, foldNum = %s", i, j));
 
                 QueryManager queryManager = new SimpleQueryManager(train);
                 SEUUniformSampling seuMethod = new SEUUniformSampling(trainMissing,
@@ -298,66 +266,33 @@ public class DatasetFactory {
                         discretizer,
                         numericAttrsIndexes);
 
-                // Zero step
-                System.out.print("possibleQueriesNum = " + seuMethod.getPossibleQueriesNum());
-
-                int num = seuMethod.getAllQueriesNum() - seuMethod.getRealPossibleQueries();
-                J48 initialCls = seuMethod.makeClassifier();
-                double acc = DatasetFactory.calculateAccuracy(initialCls, test);
-                if (numToAcc.size() <= cnt) { // todo
-                    List<Double> accs = new ArrayList<>();
-                    accs.add(acc);
-                    numToAcc.add(new Pair<>(num, accs));
-                } else {
-                    numToAcc.get(cnt).second.add(acc);
-                }
-                ++cnt;
-
-
-                List<Pair<List<Pair<Integer, Integer>>, J48>> res = seuMethod.perform(iterationsNumber);
-                J48 lastCls = new J48();
-                while (res.size() > 0) {
-                    num = num + res.get(0).first.size();
-                    acc = DatasetFactory.calculateAccuracy(res.get(0).second, test);
-                    if (numToAcc.size() <= cnt) { // todo
-                        List<Double> accs = new ArrayList<>();
-                        accs.add(acc);
-                        numToAcc.add(new Pair<>(num, accs));
-                    } else {
-                        numToAcc.get(cnt).second.add(acc);
-                    }
-                    ++cnt;
-
-                    lastCls = res.get(0).second; // todo
-
-                    System.out.print(" --> " + seuMethod.getPossibleQueriesNum());
-                    res = seuMethod.perform(iterationsNumber);
-                }
-                System.out.println(" --end--> " + seuMethod.getPossibleQueriesNum());
-
-                if (j == folds - 1) { // todo
-                    J48 cls = lastCls;
-                    System.out.println("Super test of last classifier:");
-                    System.out.println("Acccuracy = " + DatasetFactory.calculateAccuracy(cls, test));
-                    System.out.println("_____");
-                }
+                getLearningCurveHelper(numToAcc, seuMethod, test, itersNum, folds, j, true);
 
                 System.out.println("diff time = " + ((System.currentTimeMillis() - nowTime) / 1000));
                 nowTime = System.currentTimeMillis();
             }
+
+            collectInfoFromRun(numToAcc, numToAccByRuns, allQueriesNum);
+            numToAcc.clear();
         }
 
-        int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
-        Map<Integer, Double> numToAccMap = new LinkedHashMap<>();
-        for (Pair<Integer, List<Double>> pair : numToAcc) {
-            double avgAcc = pair.second.stream().mapToDouble(val -> val).average().getAsDouble();
-            numToAccMap.put((int) (Math.round(100.0 * ((double) pair.first / (double) allQueriesNum))), avgAcc);
-        }
-
-        return numToAccMap;
+        return numToAccByRuns;
     }
 
-    public static Map<Integer, Double> seuErrorSamplingGetLerningCurve(Instances instances,
+    /**
+     * SeuErrorSamplingGetLerningCurve
+     *
+     * @param instances
+     * @param runsNum
+     * @param seed
+     * @param folds
+     * @param percents
+     * @param batchSize
+     * @param esParam
+     * @return
+     * @throws Exception
+     */
+    public static Map<Integer, List<Double>> seuErrorSamplingGetLerningCurve(Instances instances,
                                                                          int runsNum,
                                                                          int seed,
                                                                          int folds,
@@ -365,8 +300,7 @@ public class DatasetFactory {
                                                                          int batchSize,
                                                                          int esParam) throws Exception {
 
-        // todo
-        int iterationsNumber = 1;
+        int itersNum = 1;
         double nowTime = System.currentTimeMillis();
 
         Set<Integer> numericAttrsIndexes = DatasetFactory.getNumericAttrsIndexes(instances);
@@ -375,9 +309,10 @@ public class DatasetFactory {
         discretizer.setInputFormat(instances);
         Instances discInstances = Filter.useFilter(instances, discretizer);
 
-        ArrayList<Pair<Integer, List<Double>>> numToAcc = new ArrayList<>();
+        int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
+        Map<Integer, List<Double>> numToAccByRuns = new LinkedHashMap<>();
+        List<Pair<Integer, List<Double>>> numToAcc = new ArrayList<>();
         for (int i = 0; i < runsNum; ++i) {
-
             // Randomize data
             Random rand = new Random(seed + i);
             Instances randData = new Instances(discInstances);   // create copy of original data
@@ -388,11 +323,9 @@ public class DatasetFactory {
                 Instances train = randData.trainCV(folds, j); // todo: not always same size
                 Instances test = randData.testCV(folds, j);
 
-                int cnt = 0; // counter for numToAcc
-
                 // Add missing
                 Instances trainMissing = DatasetFactory.makeWithMissingAttrsUniformly(train, percents);
-                System.out.println(train.numInstances());
+                System.out.println(String.format("runNum = %s, foldNum = %s", i, j));
 
                 QueryManager queryManager = new SimpleQueryManager(train);
                 SEUErrorSampling seuMethod = new SEUErrorSampling(trainMissing,
@@ -402,69 +335,114 @@ public class DatasetFactory {
                         discretizer,
                         numericAttrsIndexes);
 
-                // Zero step
-                int possibleQueriesNum = seuMethod.getRealPossibleQueries();
-                System.out.print("possibleQueriesNum = " + possibleQueriesNum);
-
-                int num = seuMethod.getAllQueriesNum() - possibleQueriesNum;
-                J48 initialCls = seuMethod.makeClassifier();
-//                int num = seuMethod.getAllQueriesNum() - seuMethod.getPossibleQueriesNum(seuMethod.getPossibleQueries(initialCls));
-                double acc = DatasetFactory.calculateAccuracy(initialCls, test);
-                if (numToAcc.size() <= cnt) { // todo
-                    List<Double> accs = new ArrayList<>();
-                    accs.add(acc);
-                    numToAcc.add(new Pair<>(num, accs));
-                } else {
-                    numToAcc.get(cnt).second.add(acc);
-                }
-                ++cnt;
-
-
-                List<Pair<List<Pair<Integer, Integer>>, J48>> res = seuMethod.perform(iterationsNumber);
-                J48 lastCls = new J48();
-                while (res.size() > 0) {
-                    num = num + res.get(0).first.size();
-                    acc = DatasetFactory.calculateAccuracy(res.get(0).second, test);
-                    if (numToAcc.size() <= cnt) { // todo
-                        List<Double> accs = new ArrayList<>();
-                        accs.add(acc);
-                        numToAcc.add(new Pair<>(num, accs));
-                    } else {
-                        numToAcc.get(cnt).second.add(acc);
-                    }
-                    ++cnt;
-
-                    lastCls = res.get(0).second; // todo
-
-                    possibleQueriesNum -= res.get(0).first.size();
-                    System.out.print(" --> " + possibleQueriesNum);
-                    res = seuMethod.perform(iterationsNumber);
-                }
-
-                System.out.println(" --end--> 0");
-
-                if (j == folds - 1) { // todo
-                    J48 cls = lastCls;
-                    System.out.println("Super test of last classifier:");
-                    System.out.println("Acccuracy = " + DatasetFactory.calculateAccuracy(cls, test));
-                    System.out.println("_____");
-                }
+                getLearningCurveHelper(numToAcc, seuMethod, test, itersNum, folds, j, true);
 
                 System.out.println("diff time = " + ((System.currentTimeMillis() - nowTime) / 1000));
                 nowTime = System.currentTimeMillis();
             }
+
+            collectInfoFromRun(numToAcc, numToAccByRuns, allQueriesNum);
+            numToAcc.clear();
         }
 
-        int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
-        Map<Integer, Double> numToAccMap = new LinkedHashMap<>();
-        for (Pair<Integer, List<Double>> pair : numToAcc) {
-            double avgAcc = pair.second.stream().mapToDouble(val -> val).average().getAsDouble();
-            numToAccMap.put((int) (Math.round(100.0 * ((double) pair.first / (double) allQueriesNum))), avgAcc);
-        }
-
-        return numToAccMap;
+        return numToAccByRuns;
     }
 
+    /**
+     *
+     * @param numToAcc
+     * @param seuMethod
+     * @param testDataset
+     * @param itersNum
+     * @param folds
+     * @param curFold
+     * @param enableLog
+     * @throws Exception
+     */
+    private static void getLearningCurveHelper(List<Pair<Integer, List<Double>>> numToAcc,
+                                               AFAMethod seuMethod,
+                                               Instances testDataset,
+                                               int itersNum,
+                                               int folds,
+                                               int curFold,
+                                               boolean enableLog) throws Exception {
+        int cnt = 0; // counter for numToAcc
+
+        // Zero step
+        int possibleQueriesNum = seuMethod.getRealPossibleQueries();
+        if (enableLog) {
+            System.out.print("possibleQueriesNum = " + possibleQueriesNum);
+        }
+
+        int num = seuMethod.getAllQueriesNum() - possibleQueriesNum;
+        J48 initialCls = seuMethod.makeClassifier();
+        double acc = DatasetFactory.calculateAccuracy(initialCls, testDataset);
+        if (numToAcc.size() <= cnt) { // todo
+            List<Double> accs = new ArrayList<>();
+            accs.add(acc);
+            numToAcc.add(new Pair<>(num, accs));
+        } else {
+            numToAcc.get(cnt).second.add(acc);
+        }
+        ++cnt;
+
+
+        List<Pair<List<Pair<Integer, Integer>>, J48>> res = seuMethod.perform(itersNum);
+        J48 lastCls = new J48();
+        while (res.size() > 0) {
+            num = num + res.get(0).first.size();
+            acc = DatasetFactory.calculateAccuracy(res.get(0).second, testDataset);
+            if (numToAcc.size() <= cnt) { // todo
+                List<Double> accs = new ArrayList<>();
+                accs.add(acc);
+                numToAcc.add(new Pair<>(num, accs));
+            } else {
+                numToAcc.get(cnt).second.add(acc);
+            }
+            ++cnt;
+
+            lastCls = res.get(0).second; // todo
+
+            possibleQueriesNum -= res.get(0).first.size();
+            if (enableLog) {
+                System.out.print(" --> " + possibleQueriesNum);
+            }
+            res = seuMethod.perform(itersNum);
+        }
+
+        if (enableLog) {
+            System.out.println(" --end--> 0");
+            if (curFold == folds - 1) { // todo
+                J48 cls = lastCls;
+                System.out.println("Super test of last classifier:");
+                System.out.println("Acccuracy = " + DatasetFactory.calculateAccuracy(cls, testDataset));
+                System.out.println("_____");
+            }
+        }
+    }
+
+    /**
+     * todo
+     *
+     * @param numToAcc
+     * @param numToAccByRuns
+     * @param allQueriesNum
+     */
+    private static void collectInfoFromRun(List<Pair<Integer, List<Double>>> numToAcc,
+                                           Map<Integer, List<Double>> numToAccByRuns,
+                                           int allQueriesNum) {
+        for (Pair<Integer, List<Double>> pair : numToAcc) {
+            double avgAcc = pair.second.stream().mapToDouble(val -> val).average().getAsDouble();
+            int key = (int) (Math.round(100.0 * ((double) pair.first / (double) allQueriesNum)));
+            if (numToAccByRuns.containsKey(key)) {
+                numToAccByRuns.get(key).add(avgAcc);
+            } else {
+                List<Double> accuracies = new LinkedList<>();
+                accuracies.add(avgAcc);
+                numToAccByRuns.put(key, accuracies);
+            }
+        }
+    }
 
 
     /**

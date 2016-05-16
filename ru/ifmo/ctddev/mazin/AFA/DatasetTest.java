@@ -24,7 +24,7 @@ public class DatasetTest {
         test.readDataset();
 //        test.testInstancesFromDataset();
         try {
-            int datasetIndex = 0;
+            int datasetIndex = 3;
             Instances instances = dataSets.get(datasetIndex).getInstances();
             String datasetName = dataSets.get(datasetIndex).getName();
             instances.setClassIndex(instances.numAttributes() - 1);
@@ -44,10 +44,10 @@ public class DatasetTest {
 ////                Pair<Map<Integer, Double>, String> methodResult = test.massiveTest(instances, datasetName);
 ////                String filename = test.writeMethodResult(methodResult, datasetName);
 //            }
-			/*
+	    //
             Pair<Map<Integer, List<Double>>, String> methodResult = test.massiveTest(instances, datasetName);
             String filename = test.writeMethodResult(methodResult, datasetName);
-			*/
+	    //
 //            String filename4 = RES_PATH + "remote-tests/" + "car_SEU-ESparam=172-runs=1-folds=10-8597.csv";
 //            Map<Integer, Double> part1 = test.readMethodResult(filename4);
 //            String filename5 = RES_PATH + "remote-tests/" + "car_SEU-ESparam=172-runs=1-folds=10-first.csv";
@@ -255,7 +255,7 @@ public class DatasetTest {
     public Pair<Map<Integer, List<Double>>, String> massiveTest(Instances instances, String datasetName) throws Exception {
         int seed = 137;
 
-        int runsNum = 10;
+        int runsNum = 6;
         int folds = 10;
         double percents = PERCENTS;
         double coef = (folds - 1) / (double) folds;
@@ -264,19 +264,19 @@ public class DatasetTest {
         Random r = new Random(System.currentTimeMillis());
         int suffixNum = r.nextInt(10000);
         // afaBandit
-        //
+        /*
         Map<Integer, List<Double>> numToAccMapBandit =
                 DatasetFactory.afaBanditGetLerningCurve(instances, runsNum, seed, folds, percents, batchSize);
         return new Pair<>(numToAccMapBandit, String.format("AFABandit-runs=%s-folds=%s-%s-%s", runsNum, folds, ALL_RUNS, suffixNum));
-        //
+        */
         // seu uniform sampling
-        /*
-        int alpha = (instances.numInstances()) * (instances.numAttributes() - 1) / batchSize; // todo full
-        int alpha = 13; // todo
+        //
+        // int alpha = (instances.numInstances()) * (instances.numAttributes() - 1) / batchSize; // todo full
+        int alpha = 10; // todo
         Map<Integer, List<Double>> numToAccMapSEU =
                 DatasetFactory.seuIniformSamplingGetLerningCurve(instances, runsNum, seed, folds, PERCENTS, batchSize, alpha);
         return new Pair(numToAccMapSEU, String.format("SEU-USalpha=%s-runs=%s-folds=%s-%s-%s", alpha, runsNum, folds, ALL_RUNS, suffixNum));
-        */
+        //
         // seu error sampling
         /*
         int euParam = instances.numInstances() / 10; // todo

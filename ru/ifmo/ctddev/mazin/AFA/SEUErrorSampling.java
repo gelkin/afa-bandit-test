@@ -4,6 +4,7 @@ import weka.classifiers.Classifier;
 import weka.classifiers.trees.J48;
 import weka.core.Instance;
 import weka.core.Instances;
+import weka.filters.Filter;
 import weka.filters.supervised.attribute.Discretize;
 
 import java.util.*;
@@ -18,14 +19,8 @@ import java.util.stream.Collectors;
  * finite set of values).
  *
  */
-public class SEUErrorSampling implements AFAMethod {
-    private Instances instances;
-    private QueryManager queryManager;
-    private Map<Integer, Set<Integer>> possibleQueries; // list of attributes of instance with missing values
-
+public class SEUErrorSampling extends AFAMethod {
     private int realPossibleQueries;
-
-    private final int b; // size of query batch
 
     private int esParam; // param which controls the complexity of the search:
                          // at each step we choose 'esParam' instances, and among them
@@ -34,18 +29,17 @@ public class SEUErrorSampling implements AFAMethod {
     private J48[] attrsClassifiers; // for getProb(..) computing
     private Instances[] attrsInstances; // for getProb(..) computing
 
-    private int n;
-    private int m;
-
     Discretize discretizer;
     Set<Integer> numericAttrsIndexes;
+
+    Instances discInstances;
 
     public SEUErrorSampling(Instances instances,
                               QueryManager queryManager,
                               int esParam,
                               int b,
                               Discretize discretizer,
-                              Set<Integer> numericAttrsIndexes) {
+                              Set<Integer> numericAttrsIndexes) throws Exception {
         this.instances = new Instances(instances);
         this.queryManager = queryManager;
         this.esParam = esParam;
@@ -56,7 +50,7 @@ public class SEUErrorSampling implements AFAMethod {
         init();
     }
 
-    private void init() throws IllegalArgumentException {
+    private void init() throws Exception {
         if (esParam < 1 || esParam > instances.numInstances()) {
             throw new IllegalArgumentException("'esParam' should be > 0");
         }
@@ -73,6 +67,8 @@ public class SEUErrorSampling implements AFAMethod {
                 }
             }
         }
+
+        discInstances = Filter.useFilter(instances, discretizer);
     }
 
     public List<Pair<List<Pair<Integer, Integer>>, J48>> perform(int k) throws Exception {
@@ -119,6 +115,9 @@ public class SEUErrorSampling implements AFAMethod {
             acquireQuery(query.first, query.second);
         }
 
+        // update discInstances
+        discInstances = Filter.useFilter(instances, discretizer);
+
         return bestQueries;
     }
 
@@ -158,6 +157,9 @@ public class SEUErrorSampling implements AFAMethod {
         for (Pair<Integer, Integer> query : bestQueries) {
             acquireQuery(query.first, query.second);
         }
+
+        // update discInstances
+        discInstances = Filter.useFilter(instances, discretizer);
 
         return bestQueries;
     }
@@ -394,10 +396,6 @@ public class SEUErrorSampling implements AFAMethod {
         }
 
         return res;
-    }
-
-    public int getAllQueriesNum() {
-        return n * m;
     }
 
     class CodeRunner implements Runnable {

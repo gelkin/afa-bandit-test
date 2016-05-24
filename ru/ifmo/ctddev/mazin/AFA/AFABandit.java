@@ -9,15 +9,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 
-public class AFABandit implements AFAMethod {
-    private Instances instances;
-    private QueryManager queryManager;
-
-    private int n; // number of instances
-    private int m; // number of attributes (features)
-    private int b; // batch size to query at one step. If there are fewer than 'b'
-                   // possible queries, acquire all remaining possible queries.
-
+public class AFABandit extends AFAMethod {
     private int totalNumQueries; // total number of queries
 
     private List<Integer> instNumQueries; // number of queries for instance (by index)
@@ -26,12 +18,35 @@ public class AFABandit implements AFAMethod {
     private List<Double> instancesReward;
     private List<Double> attributesReward;
 
-    private LinkedHashMap<Integer, Set<Integer>> possibleQueries; // list of attributes of instance with missing values
+    private double alpha; // todo obj coef
+    private double beta; // todo feat coef
 
     public AFABandit(Instances instances, QueryManager queryManager, int b) {
         this.instances = new Instances(instances);
         this.queryManager = queryManager;
         this.b = b;
+        alpha = 1.0;
+        beta = 1.0;
+
+        init();
+    }
+
+    public AFABandit(Instances instances, QueryManager queryManager, int b, double alpha) {
+        this.instances = new Instances(instances);
+        this.queryManager = queryManager;
+        this.b = b;
+        this.alpha = alpha;
+        beta = 1 - alpha;
+
+        init();
+    }
+
+    public AFABandit(Instances instances, QueryManager queryManager, int b, double alpha, double beta) {
+        this.instances = new Instances(instances);
+        this.queryManager = queryManager;
+        this.b = b;
+        this.alpha = alpha;
+        this.beta = beta;
 
         init();
     }
@@ -174,7 +189,7 @@ public class AFABandit implements AFAMethod {
                                Math.sqrt(2 * Math.log(totalNumQueries) /
                                          attrNumQueries.get(attrIndex));
 
-        return instanceScore + attributeScore;
+        return alpha * instanceScore + beta * attributeScore;
     }
 
     private void acquireQuery(int instIndex, int attrIndex) {

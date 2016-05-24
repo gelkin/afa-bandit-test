@@ -24,7 +24,7 @@ public class DatasetTest {
         test.readDataset();
 //        test.testInstancesFromDataset();
         try {
-            int datasetIndex = 3;
+            int datasetIndex = 2;
             Instances instances = dataSets.get(datasetIndex).getInstances();
             String datasetName = dataSets.get(datasetIndex).getName();
             instances.setClassIndex(instances.numAttributes() - 1);
@@ -44,10 +44,10 @@ public class DatasetTest {
 ////                Pair<Map<Integer, Double>, String> methodResult = test.massiveTest(instances, datasetName);
 ////                String filename = test.writeMethodResult(methodResult, datasetName);
 //            }
-			/*
-            Pair<Map<Integer, List<Double>>, String> methodResult = test.massiveTest(instances, datasetName);
-            String filename = test.writeMethodResult(methodResult, datasetName);
-			*/
+//            Pair<Map<Integer, List<Double>>, String> methodResult = test.massiveTest(instances, datasetName);
+//            String filename = test.writeMethodResult(methodResult, datasetName);
+
+
 //            String filename4 = RES_PATH + "remote-tests/" + "car_SEU-ESparam=172-runs=1-folds=10-8597.csv";
 //            Map<Integer, Double> part1 = test.readMethodResult(filename4);
 //            String filename5 = RES_PATH + "remote-tests/" + "car_SEU-ESparam=172-runs=1-folds=10-first.csv";
@@ -61,11 +61,29 @@ public class DatasetTest {
 //            }
 //            Pair<Map<Integer, Double>, String> methodResultTest1 = new Pair(part1, "SEU-ES");
 
-
-//            String filename1 = RES_PATH + "remote-tests/" + "vowel_SEU-ESparam=99-runs=6-folds=10-7652.csv";
-//            Pair<Map<Integer, Double>, String> methodResultTest1 = new Pair(test.readMethodResult(filename1), "SEU-ES");
+            String prefix = RES_PATH;
+            String fileDatasetName = "car";
+            String methodName = "AFABandit";
 //
-//            String filename2 = RES_PATH + "afaBandit_cool_datasets/" + "vowel_AFABandit-runs=10-folds=10.csv";
+            double beta;
+            for (double alpha = 0.0; alpha < (1.0 + 0.001); alpha += 0.1) {
+                alpha =  ((double) ((int) ((alpha + 0.001) * 10))) / 10;
+                beta = ((double) ((int) (((1.0 - alpha) + 0.001) * 10))) / 10;
+                String filename1 = fileDatasetName + "_" + methodName + String.format("-runs=10-folds=10-ALL_RUNS-1325-alpha=%s-beta=%s.csv", alpha, beta);
+                Pair<Map<Integer, List<Double>>, String> methodResultAllRuns =
+                        new Pair<>(test.readAllRunsMethodResult(prefix + filename1),
+                                methodName + "-STATS-" + String.format("alpha=%s-beta=%s", alpha, beta));
+                test.writeMethodResult(methodResultAllRuns, fileDatasetName);
+            }
+
+//            String filename1 = fileDatasetName + "_" + methodName + "-runs=10-folds=10-ALL_RUNS-6598.csv";
+//            Pair<Map<Integer, List<Double>>, String> methodResultAllRuns = new Pair<>(test.readAllRunsMethodResult(prefix + filename1), methodName + "-STATS-");
+//            test.writeMethodResult(methodResultAllRuns, fileDatasetName);
+
+
+//            Pair<Map<Integer, Double>, String> methodResultTest1 = new Pair(test.readMethodResult(filename1), "SEU-ES");
+
+//  String filename2 = RES_PATH + "afaBandit_cool_datasets/" + "vowel_AFABandit-runs=10-folds=10.csv";
 //            Pair<Map<Integer, Double>, String> methodResultTest2 = new Pair(test.readMethodResult(filename2), "AFABandit");
 //            List<Pair<Map<Integer, Double>, String>> toPlot = new ArrayList<>();
 //            toPlot.add(methodResultTest1);
@@ -78,6 +96,62 @@ public class DatasetTest {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public String writeMethodResult(Pair<Map<Integer, List<Double>>, String> methodResult, String datasetName) throws IOException {
+        String filename = RES_PATH + datasetName + "_" + methodResult.second + ".csv";
+        FileWriter fw = new FileWriter(filename);
+        for (Map.Entry<Integer, List<Double>> entry : methodResult.first.entrySet()) {
+            StringBuilder sb = new StringBuilder(entry.getKey());
+            sb.append(entry.getKey());
+            for (Double val : entry.getValue()) {
+                sb.append("," + val);
+            }
+            sb.append("\n");
+            fw.write(sb.toString());
+        }
+        fw.close();
+
+        return filename;
+    }
+
+
+    /**
+     * % -> mean, error bar
+     * @param filename
+     * @return
+     * @throws IOException
+     */
+    public Map<Integer, List<Double>> readAllRunsMethodResult(String filename) throws IOException {
+        BufferedReader br = new BufferedReader(new FileReader(filename));
+
+        Map<Integer, List<Double>> res = new LinkedHashMap<>();
+        String line;
+        while ((line = br.readLine()) != null) {
+            String[] parts = line.split(",");
+            double[] values = new double[parts.length - 1];
+            double avg = 0.0;
+            for (int i = 1; i < parts.length; ++i) {
+                values[i - 1] = Double.parseDouble(parts[i]);
+                avg += values[i - 1];
+            }
+            avg /= parts.length - 1;
+
+            double varience = 0.0;
+            for (int i = 0; i < values.length; ++i) {
+                varience += (values[i] - avg) * (values[i] - avg);
+            }
+            varience /= values.length - 1;
+            double standardDeviation = Math.sqrt(varience);
+            double error = 1.96 * standardDeviation / 1.3; // todo 95%
+            List<Double> stats = new ArrayList<>(2);
+            stats.add(avg);
+            stats.add(error);
+            res.put(Integer.parseInt(parts[0]), stats);
+        }
+        br.close();
+
+        return res;
     }
 
     public boolean coolDiscretizeTest(Instances instances) throws Exception {
@@ -221,22 +295,7 @@ public class DatasetTest {
 //        System.out.println("Averaged accuracy: " + (acc / (folds * runsNum)));
     }
 
-    public String writeMethodResult(Pair<Map<Integer, List<Double>>, String> methodResult, String datasetName) throws IOException {
-        String filename = RES_PATH + datasetName + "_" + methodResult.second + ".csv";
-        FileWriter fw = new FileWriter(filename);
-        for (Map.Entry<Integer, List<Double>> entry : methodResult.first.entrySet()) {
-            StringBuilder sb = new StringBuilder(entry.getKey());
-            sb.append(entry.getKey());
-            for (Double val : entry.getValue()) {
-                sb.append("," + val);
-            }
-            sb.append("\n");
-            fw.write(sb.toString());
-        }
-        fw.close();
 
-        return filename;
-    }
 
     public Map<Integer, Double> readMethodResult(String filename) throws IOException {
         BufferedReader br = new BufferedReader(new FileReader(filename));
@@ -263,12 +322,29 @@ public class DatasetTest {
 
         Random r = new Random(System.currentTimeMillis());
         int suffixNum = r.nextInt(10000);
-        // afaBandit
+
+        // complex afaBandit
         //
+        double beta;
+        for (double alpha = 0.0; alpha < (1.0 + 0.001); alpha += 0.1) {
+            alpha =  ((double) ((int) ((alpha + 0.001) * 10))) / 10;
+            beta = ((double) ((int) (((1.0 - alpha) + 0.001) * 10))) / 10;
+            Map<Integer, List<Double>> numToAccMapBandit =
+                    DatasetFactory.afaBanditGetLerningCurve(instances, runsNum, seed, folds, percents, batchSize);
+            Pair<Map<Integer, List<Double>>, String> methodResult = new Pair<>(numToAccMapBandit,
+                    String.format("AFABandit-runs=%s-folds=%s-%s-%s-alpha=%s-beta=%s", runsNum, folds, ALL_RUNS, suffixNum, alpha, beta));
+            writeMethodResult(methodResult, datasetName);
+        }
+
+        return null;
+        //
+
+        // afaBandit
+        /*
         Map<Integer, List<Double>> numToAccMapBandit =
                 DatasetFactory.afaBanditGetLerningCurve(instances, runsNum, seed, folds, percents, batchSize);
         return new Pair<>(numToAccMapBandit, String.format("AFABandit-runs=%s-folds=%s-%s-%s", runsNum, folds, ALL_RUNS, suffixNum));
-        //
+        */
         // seu uniform sampling
         /*
         int alpha = (instances.numInstances()) * (instances.numAttributes() - 1) / batchSize; // todo full
@@ -283,6 +359,12 @@ public class DatasetTest {
         Map<Integer, List<Double>> numToAccMapSEU =
                 DatasetFactory.seuErrorSamplingGetLerningCurve(instances, runsNum, seed, folds, percents, batchSize, euParam);
         return new Pair(numToAccMapSEU, String.format("SEU-ESparam=%s-runs=%s-folds=%s-%s-%s", euParam, runsNum, folds, ALL_RUNS, suffixNum));
+        */
+        // random acquiring
+        /*
+        Map<Integer, List<Double>> numToAccMapRandom =
+                DatasetFactory.randomAFAGetLerningCurve(instances, runsNum, seed, folds, percents, batchSize);
+        return new Pair<>(numToAccMapRandom, String.format("RandomAFA-runs=%s-folds=%s-%s-%s", runsNum, folds, ALL_RUNS, suffixNum));
         */
     }
 

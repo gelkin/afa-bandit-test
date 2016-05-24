@@ -5,6 +5,7 @@ import weka.classifiers.trees.J48;
 import weka.core.Instance;
 import weka.core.Instances;
 
+import weka.filters.Filter;
 import weka.filters.supervised.attribute.Discretize;
 
 import java.util.*;
@@ -19,14 +20,8 @@ import java.util.stream.Collectors;
 * finite set of values).
 *
 */
-public class SEUUniformSampling implements AFAMethod {
-    private Instances instances;
-    private QueryManager queryManager;
-    private Map<Integer, Set<Integer>> possibleQueries; // list of attributes of instance with missing values
-
+public class SEUUniformSampling extends AFAMethod {
     private int realPossibleQueries;
-
-    private final int b; // size of query batch
 
     private final int alpha; // param which controls the complexity of the search, random sub-sample of
                              // alpha * b queries is selected from the available pool
@@ -36,18 +31,17 @@ public class SEUUniformSampling implements AFAMethod {
     private J48[] attrsClassifiers; // for getProb(..) computing
     private Instances[] attrsInstances; // for getProb(..) computing
 
-    private int n;
-    private int m;
-
     Discretize discretizer;
     Set<Integer> numericAttrsIndexes;
+
+    Instances discInstances;
 
     public SEUUniformSampling(Instances instances,
                               QueryManager queryManager,
                               int alpha,
                               int b,
                               Discretize discretizer,
-                              Set<Integer> numericAttrsIndexes) {
+                              Set<Integer> numericAttrsIndexes) throws Exception {
         this.instances = new Instances(instances);
         this.queryManager = queryManager;
         this.alpha = alpha;
@@ -58,7 +52,7 @@ public class SEUUniformSampling implements AFAMethod {
         init(alpha);
     }
 
-    private void init(int alpha) throws IllegalArgumentException {
+    private void init(int alpha) throws Exception {
         n = instances.numInstances();
         m = instances.numAttributes() - 1;
 
@@ -71,6 +65,10 @@ public class SEUUniformSampling implements AFAMethod {
             }
         }
 
+        // update discInstances
+        discInstances = Filter.useFilter(instances, discretizer);
+
+        // init possible queries
         realPossibleQueries = possibleQueriesAsList.size();
 
         if (alpha < 1) {
@@ -136,6 +134,9 @@ public class SEUUniformSampling implements AFAMethod {
             possibleQueries.get(query.first).remove(query.second);
         }
 
+        // update discInstances
+        discInstances = Filter.useFilter(instances, discretizer);
+
         return bestQueries;
     }
 
@@ -177,6 +178,9 @@ public class SEUUniformSampling implements AFAMethod {
 
             possibleQueries.get(query.first).remove(query.second);
         }
+
+        // update discInstances
+        discInstances = Filter.useFilter(instances, discretizer);
 
         return bestQueries;
     }
@@ -333,10 +337,6 @@ public class SEUUniformSampling implements AFAMethod {
         }
 
         return res;
-    }
-
-    public int getAllQueriesNum() {
-        return n * m;
     }
 
     class CodeRunner implements Runnable {

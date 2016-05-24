@@ -158,6 +158,59 @@ public class DatasetFactory {
     }
 
     /**
+     * Random active feature-value acquiring
+     *
+     * @param instances
+     * @param runsNum
+     * @param seed
+     * @param folds
+     * @param percents
+     * @param batchSize
+     * @return
+     * @throws Exception
+     */
+    public static Map<Integer, List<Double>> randomAFAGetLerningCurve(Instances instances,
+                                                                      int runsNum,
+                                                                      int seed,
+                                                                      int folds,
+                                                                      double percents,
+                                                                      int batchSize) throws Exception {
+        // todo
+        int itersNum = 1;
+
+        int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
+        Map<Integer, List<Double>> numToAccByRuns = new LinkedHashMap<>();
+        List<Pair<Integer, List<Double>>> numToAcc = new ArrayList<>();
+        for (int i = 0; i < runsNum; ++i) {
+            // Randomize data
+            Random rand = new Random(seed + i);
+            Instances randData = new Instances(instances);   // create copy of original data
+            randData.randomize(rand);
+            randData.stratify(folds);
+
+            for (int j = 0; j < folds; ++j) {
+                Instances train = randData.trainCV(folds, j); // not always same size
+                Instances test = randData.testCV(folds, j);
+
+                // Add missing
+                Instances trainMissing = DatasetFactory.makeWithMissingAttrsUniformly(train, percents);
+                System.out.println(String.format("runNum = %s, foldNum = %s", i, j));
+
+                QueryManager queryManager = new SimpleQueryManager(train);
+                RandomAFA afaMethod = new RandomAFA(trainMissing, queryManager, batchSize);
+
+                getLearningCurveHelper(numToAcc, afaMethod, test, itersNum, folds, j, false);
+            }
+
+            collectInfoFromRun(numToAcc, numToAccByRuns, allQueriesNum);
+            numToAcc.clear();
+        }
+
+        return numToAccByRuns;
+    }
+
+
+    /**
      * AfaBanditGetLerningCurve
      *
      * @param instances
@@ -238,7 +291,6 @@ public class DatasetFactory {
 
         Discretize discretizer = new Discretize();
         discretizer.setInputFormat(instances);
-        Instances discInstances = Filter.useFilter(instances, discretizer);
 
         int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
         Map<Integer, List<Double>> numToAccByRuns = new LinkedHashMap<>();
@@ -246,7 +298,7 @@ public class DatasetFactory {
         for (int i = 0; i < runsNum; ++i) {
             // Randomize data
             Random rand = new Random(seed + i);
-            Instances randData = new Instances(discInstances);   // create copy of original data
+            Instances randData = new Instances(instances);   // create copy of original data
             randData.randomize(rand);
             randData.stratify(folds);
 
@@ -307,7 +359,6 @@ public class DatasetFactory {
 
         Discretize discretizer = new Discretize();
         discretizer.setInputFormat(instances);
-        Instances discInstances = Filter.useFilter(instances, discretizer);
 
         int allQueriesNum = (int) ((double) (instances.numInstances() * (instances.numAttributes() - 1)) * ((double) (folds - 1) / folds));
         Map<Integer, List<Double>> numToAccByRuns = new LinkedHashMap<>();
@@ -315,7 +366,7 @@ public class DatasetFactory {
         for (int i = 0; i < runsNum; ++i) {
             // Randomize data
             Random rand = new Random(seed + i);
-            Instances randData = new Instances(discInstances);   // create copy of original data
+            Instances randData = new Instances(instances);   // create copy of original data
             randData.randomize(rand);
             randData.stratify(folds);
 

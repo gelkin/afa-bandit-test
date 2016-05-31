@@ -5,6 +5,7 @@ import weka.classifiers.trees.J48;
 import weka.core.Instance;
 import weka.core.Instances;
 
+import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,7 +37,7 @@ public class AFABandit extends AFAMethod {
         this.queryManager = queryManager;
         this.b = b;
         this.alpha = alpha;
-        beta = 1 - alpha;
+        beta = 1.0 - alpha;
 
         init();
     }
@@ -137,10 +138,22 @@ public class AFABandit extends AFAMethod {
             setRewardsForInstances(classifier);
             setRewardsForAttributes();
 
-            if (possibleQueries.size() < b) {
-                b = possibleQueries.size();
+            // todo
+//            for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
+//                int instInd = entry.getKey();
+//                if (DatasetFactory.isInstMisclassified(classifier, instances.instance(instInd))) {
+//                    System.out.println(String.format("Object %s has margin = %s and is misclassified", instInd, instancesReward.get(instInd)));
+//                }
+//            }
+//            System.out.println("end.. another one");
+
+            int batchSize = b;
+            int possibleQueriesNum = getRealPossibleQueries();
+            if (possibleQueriesNum < b) { // todo
+                batchSize = possibleQueriesNum;
             }
-            List<Pair<Integer, Integer>> bestQueries = performStep(b);
+
+            List<Pair<Integer, Integer>> bestQueries = performStep(batchSize);
             classifier = makeClassifier();
             res.add(new Pair<>(bestQueries, classifier));
 
@@ -150,17 +163,45 @@ public class AFABandit extends AFAMethod {
         return res;
     }
 
+// todo
+//    boolean firstTime = true;
+
     private List<Pair<Integer, Integer>> performStep(int b) {
-        // todo write your own normal pair
         List<Pair<Double, Pair<Integer, Integer>>> scores = new ArrayList<>();
+
+//        todo
+//        DecimalFormat df = new DecimalFormat("#.####");
+//        System.out.println("Attribute's reward");
+//        for (int i = 0; i < attributesReward.size(); ++i) {
+//            System.out.print(i + ": " + Double.valueOf(df.format(attributesReward.get(i))) + ", ");
+//        }
+//        System.out.println("");
+//        System.out.println("Instance's reward");
+//        for (int i = 0; i < instancesReward.size(); ++i) {
+//            System.out.print(i + ": " + Double.valueOf(df.format(instancesReward.get(i))) + ", ");
+//        }
+//        System.out.println("");
+
+//        System.out.println(String.format("%s\t%s\t\t\tREWARD: INST\t\tATTR\t\tCOMPL INST\t\tATTR\t\tSCORE", "i", "j"));
+//        todo
 
         for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
             int i = entry.getKey();
             for (Integer j : entry.getValue()) {
-                double score = getScore(i, j);
+                double score = getScoreAttr(i, j);
                 scores.add(new Pair<>(score, new Pair<>(i, j)));
+//                if (score < Double.MAX_VALUE && score > Double.MIN_VALUE) {
+//                    System.out.print(String.format("(%s, %s, %s), ", i, j, Double.valueOf(df.format(score))));
+//                }
             }
+//            todo
+//            System.out.println("");
         }
+
+//        todo
+//        firstTime = false;
+//        System.out.println("-----------------");
+
 
         // Choose best 'b' queries to acquire:
         Collections.sort(scores, (o1, o2) -> o1.first < o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
@@ -175,21 +216,58 @@ public class AFABandit extends AFAMethod {
             instNumQueries.set(query.first, instNumQueries.get(query.first) + 1);
             attrNumQueries.set(query.second, attrNumQueries.get(query.second) + 1);
 
+            ++totalNumQueries;
+
             possibleQueries.get(query.first).remove(query.second);
         }
 
         return bestQueries;
     }
 
-    private double getScore(int instIndex, int attrIndex) {
-        double instanceScore = instancesReward.get(instIndex) +
-                               Math.sqrt(2 * Math.log(totalNumQueries) /
-                                         instNumQueries.get(instIndex));
-        double attributeScore = attributesReward.get(attrIndex) +
-                               Math.sqrt(2 * Math.log(totalNumQueries) /
-                                         attrNumQueries.get(attrIndex));
+    private double getScoreInst(int instIndex, int attrIndex) {
+        double instReward = instancesReward.get(instIndex);
+        double instExploration = Math.sqrt(2 * Math.log(totalNumQueries) /
+                instNumQueries.get(instIndex));
+        return instReward + instExploration;
+    }
 
-        return alpha * instanceScore + beta * attributeScore;
+    private double getScoreAttr(int instIndex, int attrIndex) {
+        double attrReward = attributesReward.get(attrIndex);
+        double attrExploration = Math.sqrt(2 * Math.log(totalNumQueries) /
+                                           attrNumQueries.get(attrIndex));
+        return attrReward + attrExploration;
+    }
+
+    private double getScoreMixed(int instIndex, int attrIndex) {
+        double instReward = instancesReward.get(instIndex); // todo CHANGE REWARD
+        double attrReward = attributesReward.get(attrIndex);
+
+        double commonExploration = Math.sqrt(2 * Math.log(totalNumQueries) /
+                (instNumQueries.get(instIndex) + attrNumQueries.get(attrIndex)));
+
+        double score = alpha * instReward + beta * attrReward + commonExploration;
+
+
+//        boolean showLog = false;
+//        if (showLog && firstTime) {
+//            DecimalFormat df = new DecimalFormat("#.####");
+//
+//            // todo
+//            int percInstReward = (int) (100 * instReward / score);
+//            int percAttrReward = (int) (100 * attrReward / score);
+//            int percInstExploration = (int) (100 * instExploration / score);
+//            int percAttrExploration = (int) (100 * attrExploration / score);
+//
+//            System.out.println(String.format("%s\t%s\t\t\t%s%%(%s)\t\t%s%%(%s)\t\t%s%%(%s)\t\t%s%%(%s)\t\t%s", instIndex, attrIndex
+//                    , percInstReward, Double.valueOf(df.format(instReward))
+//                    , percAttrReward, Double.valueOf(df.format(attrReward))
+//                    , percInstExploration, Double.valueOf(df.format(instExploration))
+//                    , percAttrExploration, Double.valueOf(df.format(attrExploration))
+//                    , Double.valueOf(df.format(score))));
+//        }
+        // todo
+
+        return score;
     }
 
     private void acquireQuery(int instIndex, int attrIndex) {
@@ -223,7 +301,7 @@ public class AFABandit extends AFAMethod {
             }
 
             // if instance is classified correctly
-            if (maxIndex == instances.instance(i).classValue()) {
+            if (maxIndex == (int) instances.instance(i).classValue()) {
                 // then maxProb - trueClassProb
                 double secondMaxProb = Double.MIN_VALUE;
                 for (int j = 0; j < probs.length; ++j) {
@@ -231,6 +309,7 @@ public class AFABandit extends AFAMethod {
                         secondMaxProb = probs[j];
                     }
                 }
+                // then trueClassProb == maxProb:
                 instancesReward.set(i, getInstReward(maxProb, secondMaxProb));
             } else { // if instance is misclassified
                 double trueClassProb = probs[(int) instances.instance(i).classValue()];
@@ -251,7 +330,7 @@ public class AFABandit extends AFAMethod {
      * @return
      */
     private double getInstReward(double trueClassProb, double maxProb) {
-        return maxProb - trueClassProb;
+        return (1.0 + (maxProb - trueClassProb)) / 2.0;
     }
 
     private void setRewardsForAttributes() throws Exception {
@@ -287,6 +366,8 @@ public class AFABandit extends AFAMethod {
 
         return res;
     }
+
+
 
     public int getAllQueriesNum() {
         return n * m;

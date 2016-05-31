@@ -6,11 +6,45 @@ import weka.core.Instances;
 import weka.filters.Filter;
 import weka.filters.supervised.attribute.Discretize;
 
+import java.lang.reflect.Array;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class DatasetFactory {
+
+
+    public static Instances reduceInstancesNumber(Instances instances, double percent) {
+        ArrayList<List<Integer>> instanceByClass = new ArrayList<>(instances.numClasses());
+        for (int i = 0; i < instances.numClasses(); ++i) {
+            instanceByClass.add(new ArrayList<>());
+        }
+
+        Instances res = new Instances(instances, (int) (instances.numInstances() * percent));
+        for (int i = 0; i < instances.numInstances(); ++i) {
+            instanceByClass.get((int) instances.instance(i).classValue()).add(i);
+        }
+
+        for (int i = 0; i < instanceByClass.size(); ++i) {
+            Collections.shuffle(instanceByClass.get(i));
+            instanceByClass.set(i, instanceByClass.get(i).subList(0, (int) (instanceByClass.get(i).size() * percent)));
+        }
+
+        for (int i = 0; i < instanceByClass.size(); ++i) {
+            for (int j : instanceByClass.get(i)) {
+                res.add(instances.instance(j));
+            }
+        }
+
+        return res;
+    }
+
+    public static J48 staticMakeClassifier(Instances instances) throws Exception {
+        J48 classifier = new J48();
+        classifier.setUseLaplace(true); // todo as in paper
+        classifier.buildClassifier(instances);
+        return classifier;
+    }
 
     /**
      * Make deep copy of 'original' with random (percent * original.numAttributes())
@@ -98,6 +132,10 @@ public class DatasetFactory {
         return resInstances;
     }
 
+    public static boolean isInstMisclassified(Instance inst, J48 cls) throws Exception {
+        return inst.classValue() != cls.classifyInstance(inst);
+    }
+
     /**
      * todo
      *
@@ -146,15 +184,15 @@ public class DatasetFactory {
             throw new IllegalArgumentException("The class index for the instances isn't specified");
         }
 
-        int acc = 0;
+        int cnt = 0;
         for (int i = 0; i < test.numInstances(); ++i) {
             Instance inst = test.instance(i);
-            if (inst.classValue() == cls.classifyInstance(test.instance(i))) {
-                ++acc;
+            if (inst.classValue() == (int) cls.classifyInstance(test.instance(i))) {
+                ++cnt;
             }
         }
 
-        return (double) acc / ((double) test.numInstances());
+        return (double) cnt / ((double) test.numInstances());
     }
 
     /**
@@ -276,13 +314,13 @@ public class DatasetFactory {
      * @return
      * @throws Exception
      */
-    public static Map<Integer, List<Double>> seuIniformSamplingGetLerningCurve(Instances instances,
-                                                                int runsNum,
-                                                                int seed,
-                                                                int folds,
-                                                                double percents,
-                                                                int batchSize,
-                                                                int alpha) throws Exception {
+    public static Map<Integer, List<Double>> seuUniformSamplingGetLerningCurve(Instances instances,
+                                                                               int runsNum,
+                                                                               int seed,
+                                                                               int folds,
+                                                                               double percents,
+                                                                               int batchSize,
+                                                                               int alpha) throws Exception {
         // todo
         int itersNum = 1;
         double nowTime = System.currentTimeMillis();

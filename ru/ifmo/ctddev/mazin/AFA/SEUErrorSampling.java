@@ -68,7 +68,7 @@ public class SEUErrorSampling extends AFAMethod {
             }
         }
 
-        discInstances = Filter.useFilter(instances, discretizer);
+//        todo discInstances = Filter.useFilter(instances, discretizer);
     }
 
     public List<Pair<List<Pair<Integer, Integer>>, J48>> perform(int k) throws Exception {
@@ -81,9 +81,13 @@ public class SEUErrorSampling extends AFAMethod {
                 break; // nothing to query
             }
 
+            // set discInstances
+            discInstances = Filter.useFilter(instances, discretizer);
+
             int batchSize = b;
-            if (possibleQueries.size() < b) {
-                batchSize = possibleQueries.size();
+            int possibleQueriesNum = getPossibleQueriesNum();
+            if (possibleQueriesNum < b) { // todo
+                batchSize = possibleQueriesNum;
             }
 
             List<Pair<Integer, Integer>> bestQueries = concurrentPerformStep(batchSize, classifier);
@@ -94,46 +98,44 @@ public class SEUErrorSampling extends AFAMethod {
         return res;
     }
 
-    private List<Pair<Integer, Integer>> performStep(int batchSize, J48 classifier) throws Exception {
-        attrsClassifiers = new J48[m]; // todo mb optimize updating - update not all
-        attrsInstances = new Instances[m]; // todo mb optimize updating - update not all
-        List<Pair<Double, Pair<Integer, Integer>>> scores = new ArrayList<>();
-        for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
-            int i = entry.getKey();
-            for (Integer j : entry.getValue()) {
-                double score = getScore(i, j, classifier);
-                scores.add(new Pair<>(score, new Pair<>(i, j)));
-            }
-        }
-        // Choose best 'b' queries to acquire:
-        Collections.sort(scores, (o1, o2) -> o1.first < o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
-        ArrayList<Pair<Integer, Integer>> bestQueries = scores.subList(0, batchSize).stream()
-                .map(pair -> pair.second)
-                .collect(Collectors.toCollection(ArrayList::new));
-
-        for (Pair<Integer, Integer> query : bestQueries) {
-            acquireQuery(query.first, query.second);
-        }
-
-        // update discInstances
-        discInstances = Filter.useFilter(instances, discretizer);
-
-        return bestQueries;
-    }
+// todo
+//    private List<Pair<Integer, Integer>> performStep(int batchSize, J48 classifier) throws Exception {
+//        attrsClassifiers = new J48[m]; // todo mb optimize updating - update not all
+//        attrsInstances = new Instances[m]; // todo mb optimize updating - update not all
+//        List<Pair<Double, Pair<Integer, Integer>>> scores = new ArrayList<>();
+//        for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
+//            int i = entry.getKey();
+//            for (Integer j : entry.getValue()) {
+//                double score = getScore(i, j, classifier);
+//                scores.add(new Pair<>(score, new Pair<>(i, j)));
+//            }
+//        }
+//        // Choose best 'b' queries to acquire:
+//        Collections.sort(scores, (o1, o2) -> o1.first < o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
+//        ArrayList<Pair<Integer, Integer>> bestQueries = scores.subList(0, batchSize).stream()
+//                .map(pair -> pair.second)
+//                .collect(Collectors.toCollection(ArrayList::new));
+//
+//        for (Pair<Integer, Integer> query : bestQueries) {
+//            acquireQuery(query.first, query.second);
+//        }
+//
+//        return bestQueries;
+//    }
 
     /**
      * Perform step with calculation score for each possible query in parallel
      *
      * @param batchSize
-     * @param classifier
+     * @param cls
      * @return
      * @throws Exception
      */
-    private List<Pair<Integer, Integer>> concurrentPerformStep(int batchSize, J48 classifier) throws Exception {
+    private List<Pair<Integer, Integer>> concurrentPerformStep(int batchSize, J48 cls) throws Exception {
         attrsClassifiers = new J48[m];
         attrsInstances = new Instances[m];
-        for (int i = 0; i < m; ++i) {
-            initClassifierForAttr(i);
+        for (int j = 0; j < m; ++j) {
+            initClassifierForAttr(j);
         }
 
         List<Pair<Double, Pair<Integer, Integer>>> scores = Collections.synchronizedList(new ArrayList<>());
@@ -141,7 +143,7 @@ public class SEUErrorSampling extends AFAMethod {
         for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
             int i = entry.getKey();
             for (Integer j : entry.getValue()) {
-                CodeRunner runner = new CodeRunner(new Instances(instances), (J48) Classifier.makeCopy(classifier), i, j, scores);
+                CodeRunner runner = new CodeRunner(new Instances(discInstances), (J48) Classifier.makeCopy(cls), i, j, scores);
                 execSvc.execute(runner);
             }
         }
@@ -159,11 +161,12 @@ public class SEUErrorSampling extends AFAMethod {
         }
 
         // update discInstances
-        discInstances = Filter.useFilter(instances, discretizer);
+//        discInstances = Filter.useFilter(instances, discretizer);
 
         return bestQueries;
     }
 
+    // ok
     public Map<Integer, Set<Integer>> getPossibleQueries(J48 classifier) throws Exception {
         List<Integer> matchedInstances = getInterestingInstances(classifier);
 
@@ -183,15 +186,13 @@ public class SEUErrorSampling extends AFAMethod {
         return possibleQueries;
     }
 
-    private List<Integer> getInterestingInstances(J48 classifier) throws Exception {
+    // ok
+    private List<Integer> getInterestingInstances(J48 cls) throws Exception {
         ArrayList<Integer> misclassified = new ArrayList<>(n);
         for (int i = 0; i < n; ++i) {
             Instance inst = instances.instance(i);
-            if (inst.hasMissingValue()) {
-                double value = classifier.classifyInstance(inst);
-                if (inst.classValue() == value) {
-                    misclassified.add(i);
-                }
+            if (inst.hasMissingValue() && DatasetFactory.isInstMisclassified(inst, cls)) { // todo
+                misclassified.add(i);
             }
         }
 
@@ -206,26 +207,25 @@ public class SEUErrorSampling extends AFAMethod {
             ArrayList<Pair<Double, Integer>> scores = new ArrayList<>(n);
             for (int i = 0; i < n; ++i) {
                 Instance inst = instances.instance(i);
-                if (inst.hasMissingValue()) {
-                    double value = classifier.classifyInstance(inst);
-                    if (inst.classValue() != value) {
-                        double score = getUncertaintyScore(inst, classifier);
-                        scores.add(new Pair<>(score, i));
-                    }
+                if (inst.hasMissingValue() && !DatasetFactory.isInstMisclassified(inst, cls)) { // todo
+                    double score = getUncertaintyScore(inst, cls);
+                    scores.add(new Pair<>(score, i));
                 }
             }
+            // choose min scores
             Collections.sort(scores, (o1, o2) -> o1.first > o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
             int subListSize = Math.min(scores.size(), esParam - misclassified.size());
-            ArrayList<Integer> bestInstances
+            ArrayList<Integer> bestInstancesByScore
                     = scores.subList(0, subListSize).stream()
                     .map(pair -> pair.second)
                     .collect(Collectors.toCollection(ArrayList::new));
-            matchedInstances.addAll(bestInstances);
+            matchedInstances.addAll(bestInstancesByScore);
         }
 
         return matchedInstances;
     }
 
+    // ok
     private double getUncertaintyScore(Instance inst, J48 classifier) throws Exception {
         double[] probs = classifier.distributionForInstance(inst);
 
@@ -253,15 +253,6 @@ public class SEUErrorSampling extends AFAMethod {
         Instance inst = instances.instance(instIndex);
         double value = queryManager.getValue(instIndex, attrIndex);
         inst.setValue(attrIndex, value);
-        // todo
-//        if (!numericAttrsIndexes.contains(attrIndex)) {
-//            inst.setValue(attrIndex, value);
-//        } else {
-//            double[] cutPoints = discretizer.getCutPoints(attrIndex);
-//            int pos = Arrays.binarySearch(cutPoints, value);
-//            pos = pos >= 0 ? pos : -(pos + 1);
-//            inst.setValue(attrIndex, pos);
-//        }
     }
 
     public static void acquireQuery(QueryManager queryManager,
@@ -288,17 +279,17 @@ public class SEUErrorSampling extends AFAMethod {
      *
      * @return
      */
-    private double getScore(int instIndex, int attrIndex, J48 classifier) throws Exception {
-        double score = 0.0;
-        double[] estimatedProbs = getProbs(instIndex, attrIndex);
-
-        int numValues = instances.attribute(attrIndex).numValues();
-        for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
-            score += estimatedProbs[valueIndex] *
-                    getUtility(instIndex, attrIndex, valueIndex, classifier);
-        }
-        return score;
-    }
+//    private double getScore(int instIndex, int attrIndex, J48 classifier) throws Exception {
+//        double score = 0.0;
+//        double[] estimatedProbs = getProbs(instIndex, attrIndex);
+//
+//        int numValues = discInstances.attribute(attrIndex).numValues();
+//        for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
+//            score += estimatedProbs[valueIndex] *
+//                    getUtility(instIndex, attrIndex, valueIndex, classifier);
+//        }
+//        return score;
+//    }
 
     /**
      * The probability that 'query' has the value 'value'. todo
@@ -308,14 +299,14 @@ public class SEUErrorSampling extends AFAMethod {
      * @return
      * @throws Exception
      */
-    private double[] getProbs(int instIndex, int attrIndex) throws Exception {
-        if (attrsClassifiers[attrIndex] == null) {
-            initClassifierForAttr(attrIndex);
-        }
-        Instance inst = new Instance(instances.instance(instIndex));
-        inst.setDataset(attrsInstances[attrIndex]);
-        return attrsClassifiers[attrIndex].distributionForInstance(inst);
-    }
+//    private double[] getProbs(int instIndex, int attrIndex) throws Exception {
+//        if (attrsClassifiers[attrIndex] == null) {
+//            initClassifierForAttr(attrIndex);
+//        }
+//        Instance inst = new Instance(discInstances.instance(instIndex));
+//        inst.setDataset(attrsInstances[attrIndex]);
+//        return attrsClassifiers[attrIndex].distributionForInstance(inst);
+//    }
 
 
     /**
@@ -331,17 +322,17 @@ public class SEUErrorSampling extends AFAMethod {
      * @return
      * @throws Exception
      */
-    private double getUtility(int instIndex, int attrIndex, double value, J48 classifier) throws Exception {
-        instances.instance(instIndex).setValue(attrIndex, value);
-        J48 newClassifier = makeClassifier();
-        double newAcc = DatasetFactory.calculateAccuracy(newClassifier, instances);
-        instances.instance(instIndex).setMissing(attrIndex);
-
-        double oldAcc = DatasetFactory.calculateAccuracy(classifier, instances);
-
-//        return (newAcc - oldAcc) / C[instIndex][attrIndex];
-        return newAcc - oldAcc;
-    }
+//    private double getUtility(int instIndex, int attrIndex, double value, J48 classifier) throws Exception {
+//        discInstances.instance(instIndex).setValue(attrIndex, value);
+//        J48 newClassifier = makeClassifier();
+//        double newAcc = DatasetFactory.calculateAccuracy(newClassifier, discInstances);
+//        instances.instance(instIndex).setMissing(attrIndex);
+//
+//        double oldAcc = DatasetFactory.calculateAccuracy(classifier, instances);
+//
+////        return (newAcc - oldAcc) / C[instIndex][attrIndex];
+//        return newAcc - oldAcc;
+//    }
 
     /**
      * todo
@@ -350,37 +341,41 @@ public class SEUErrorSampling extends AFAMethod {
      * @throws Exception
      */
     public J48 makeClassifier() throws Exception {
-        J48 classifier = new J48();
-        classifier.setUseLaplace(true); // todo as in paper
-        classifier.buildClassifier(instances);
-        return classifier;
+        return DatasetFactory.staticMakeClassifier(instances);
     }
 
+    /**
+     * Build a classifier based on instances with class-attribute and attribute
+     * at 'attrIndex' position swapped.
+     * It is needed to predict the value at 'attrIndex' position for an instance
+     * with missing value for this attribute.
+     *
+     * @param attrIndex
+     * @throws Exception
+     */
     private void initClassifierForAttr(int attrIndex) throws Exception {
-        // todo get rid of copying
-        int cap = n;
+        int capacity = n;
         for (int i = 0; i < n; ++i) {
-            if (Instance.isMissingValue(instances.instance(i).value(attrIndex))) {
-                --cap;
+            if (Instance.isMissingValue(discInstances.instance(i).value(attrIndex))) {
+                --capacity;
             }
         }
-        Instances instancesForAttr = new Instances(instances, cap);
+
+        Instances instancesForAttr = new Instances(discInstances, capacity);
         for (int i = 0; i < n; ++i) {
-            if (Instance.isMissingValue(instances.instance(i).value(attrIndex))) {
-                instancesForAttr.add(instances.instance(i));
+            // todo !
+            if (!Instance.isMissingValue(discInstances.instance(i).value(attrIndex))) {
+                instancesForAttr.add(discInstances.instance(i));
             }
         }
         instancesForAttr.setClassIndex(attrIndex);
-
-        J48 classifier = new J48();
-        classifier.setUseLaplace(true); // todo as in paper
-        classifier.buildClassifier(instancesForAttr);
+        J48 attrCls = DatasetFactory.staticMakeClassifier(instancesForAttr);
 
         attrsInstances[attrIndex] = instancesForAttr;
-        attrsClassifiers[attrIndex] = classifier;
+        attrsClassifiers[attrIndex] = attrCls;
     }
 
-    public int getPossibleQueriesNum(Map<Integer, Set<Integer>> possibleQueries) {
+    public static int getPossibleQueriesNum(Map<Integer, Set<Integer>> possibleQueries) {
         int res = 0;
         for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
             res += entry.getValue().size();
@@ -421,8 +416,9 @@ public class SEUErrorSampling extends AFAMethod {
                 score = concurrentGetScore(instances, instIndex, attrIndex, cls, attrsClassifiers, attrsInstances);
                 scores.add(new Pair<>(score, new Pair<>(instIndex, attrIndex)));
 
-                cls.setUseLaplace(true);
-                cls.buildClassifier(instances);
+                // todo what
+//                cls.setUseLaplace(true);
+//                cls.buildClassifier(instances);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -437,12 +433,14 @@ public class SEUErrorSampling extends AFAMethod {
                                              J48[] attrsClassifiers,
                                              Instances[] attrsInstances) throws Exception {
         double score = 0.0;
+
         double[] estimatedProbs = concurrentGetProbs(instances, instIndex, attrIndex, attrsClassifiers, attrsInstances);
 
         int numValues = instances.attribute(attrIndex).numValues();
+        double oldAcc = DatasetFactory.calculateAccuracy(classifier, instances);
         for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
             score += estimatedProbs[valueIndex] *
-                    concurrentGetUtility(instances, instIndex, attrIndex, valueIndex, classifier);
+                     concurrentGetUtility(instances, instIndex, attrIndex, valueIndex, oldAcc);
         }
         return score;
     }
@@ -457,23 +455,13 @@ public class SEUErrorSampling extends AFAMethod {
         return attrsClassifiers[attrIndex].distributionForInstance(inst);
     }
 
-    private static double concurrentGetUtility(Instances instances, int instIndex, int attrIndex, double value, J48 classifier) throws Exception {
-        instances.instance(instIndex).setValue(attrIndex, value);
-        J48 newClassifier = staticMakeClassifier(instances);
+    private static double concurrentGetUtility(Instances instances, int instIndex, int attrIndex, double valueIndex, double oldAcc) throws Exception {
+        instances.instance(instIndex).setValue(attrIndex, valueIndex);
+        J48 newClassifier = DatasetFactory.staticMakeClassifier(instances);
         double newAcc = DatasetFactory.calculateAccuracy(newClassifier, instances);
         instances.instance(instIndex).setMissing(attrIndex);
 
-        double oldAcc = DatasetFactory.calculateAccuracy(classifier, instances);
-
-//        return (newAcc - oldAcc) / C[instIndex][attrIndex];
         return newAcc - oldAcc;
-    }
-
-    private static J48 staticMakeClassifier(Instances instances) throws Exception {
-        J48 classifier = new J48();
-        classifier.setUseLaplace(true); // todo as in paper
-        classifier.buildClassifier(instances);
-        return classifier;
     }
 
     public int getRealPossibleQueries() {

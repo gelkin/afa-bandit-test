@@ -97,8 +97,9 @@ public class SEUUniformSampling extends AFAMethod {
                 break; // nothing to query
             }
             int batchSize = b;
-            if (possibleQueries.size() < b) {
-                batchSize = possibleQueries.size();
+            int possibleQueriesNum = getPossibleQueriesNum();
+            if (possibleQueriesNum < b) { // todo
+                batchSize = possibleQueriesNum;
             }
 
             List<Pair<Integer, Integer>> bestQueries = concurrentPerformStep(batchSize, classifier);

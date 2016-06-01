@@ -321,7 +321,7 @@ public class DatasetTest {
     public Pair<Map<Integer, List<Double>>, String> massiveTest(Instances instances, String datasetName) throws Exception {
         int seed = 137;
 
-        int runsNum = 10;
+        int runsNum = 6;
         int folds = 10;
         double percents = PERCENTS;
         double coef = (folds - 1) / (double) folds;

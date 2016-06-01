@@ -26,7 +26,7 @@ public class SEUErrorSampling extends AFAMethod {
                          // at each step we choose 'esParam' instances, and among them
                          // choose 'b' missing queries to acquire
 
-    private J48[] attrsClassifiers; // for getProb(..) computing
+    private Pair<J48, Integer>[] attrsClassifiers; // for getProb(..) computing
     private Instances[] attrsInstances; // for getProb(..) computing
 
     Discretize discretizer;
@@ -132,18 +132,20 @@ public class SEUErrorSampling extends AFAMethod {
      * @throws Exception
      */
     private List<Pair<Integer, Integer>> concurrentPerformStep(int batchSize, J48 cls) throws Exception {
-        attrsClassifiers = new J48[m];
+        attrsClassifiers = new Pair[m];
         attrsInstances = new Instances[m];
         for (int j = 0; j < m; ++j) {
             initClassifierForAttr(j);
         }
+
+        double oldAcc = DatasetFactory.calculateAccuracy(cls, instances);
 
         List<Pair<Double, Pair<Integer, Integer>>> scores = Collections.synchronizedList(new ArrayList<>());
         ExecutorService execSvc = Executors.newCachedThreadPool();
         for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
             int i = entry.getKey();
             for (Integer j : entry.getValue()) {
-                CodeRunner runner = new CodeRunner(new Instances(discInstances), (J48) Classifier.makeCopy(cls), i, j, scores);
+                CodeRunner runner = new CodeRunner(new Instances(discInstances), i, j, scores, oldAcc);
                 execSvc.execute(runner);
             }
         }
@@ -362,17 +364,28 @@ public class SEUErrorSampling extends AFAMethod {
         }
 
         Instances instancesForAttr = new Instances(discInstances, capacity);
+        boolean isUnaryClassifier = true;
+        int classValue = -1;
         for (int i = 0; i < n; ++i) {
             // todo !
             if (!Instance.isMissingValue(discInstances.instance(i).value(attrIndex))) {
+                int value = (int) discInstances.instance(i).value(attrIndex);
+                if (classValue != -1 && classValue != value) {
+                    isUnaryClassifier = false;
+                } else {
+                    classValue = value;
+                }
                 instancesForAttr.add(discInstances.instance(i));
             }
         }
         instancesForAttr.setClassIndex(attrIndex);
-        J48 attrCls = DatasetFactory.staticMakeClassifier(instancesForAttr);
-
         attrsInstances[attrIndex] = instancesForAttr;
-        attrsClassifiers[attrIndex] = attrCls;
+        if (isUnaryClassifier) {
+            attrsClassifiers[attrIndex] = new Pair<>(null, classValue);
+        } else {
+            J48 attrCls = DatasetFactory.staticMakeClassifier(instancesForAttr);
+            attrsClassifiers[attrIndex] = new Pair<>(attrCls, -1);
+        }
     }
 
     public static int getPossibleQueriesNum(Map<Integer, Set<Integer>> possibleQueries) {
@@ -396,24 +409,24 @@ public class SEUErrorSampling extends AFAMethod {
     class CodeRunner implements Runnable {
 
         public Instances instances;
-        public J48 cls;
         public int instIndex;
         public int attrIndex;
         public List<Pair<Double, Pair<Integer, Integer>>> scores;
+        public final double oldAcc;
 
-        CodeRunner(Instances instances, J48 cls, int instIndex, int attrIndex, List<Pair<Double, Pair<Integer, Integer>>> scores) {
+        CodeRunner(Instances instances, int instIndex, int attrIndex, List<Pair<Double, Pair<Integer, Integer>>> scores, double oldAcc) {
             this.instances = instances;
-            this.cls = cls;
             this.instIndex = instIndex;
             this.attrIndex = attrIndex;
             this.scores = scores;
+            this.oldAcc = oldAcc;
         }
 
         @Override
         public void run() {
             try {
                 double score;
-                score = concurrentGetScore(instances, instIndex, attrIndex, cls, attrsClassifiers, attrsInstances);
+                score = concurrentGetScore(instances, instIndex, attrIndex, oldAcc, attrsClassifiers, attrsInstances);
                 scores.add(new Pair<>(score, new Pair<>(instIndex, attrIndex)));
 
                 // todo what
@@ -429,18 +442,21 @@ public class SEUErrorSampling extends AFAMethod {
     private static double concurrentGetScore(Instances instances,
                                              int instIndex,
                                              int attrIndex,
-                                             J48 classifier,
-                                             J48[] attrsClassifiers,
+                                             double oldAcc,
+                                             Pair<J48, Integer>[] attrsClassifiers,
                                              Instances[] attrsInstances) throws Exception {
         double score = 0.0;
 
-        double[] estimatedProbs = concurrentGetProbs(instances, instIndex, attrIndex, attrsClassifiers, attrsInstances);
-
-        int numValues = instances.attribute(attrIndex).numValues();
-        double oldAcc = DatasetFactory.calculateAccuracy(classifier, instances);
-        for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
-            score += estimatedProbs[valueIndex] *
-                     concurrentGetUtility(instances, instIndex, attrIndex, valueIndex, oldAcc);
+        Pair<J48, Integer> attrClassifier = attrsClassifiers[attrIndex];
+        if (attrClassifier.first == null) {
+            score = concurrentGetUtility(instances, instIndex, attrIndex, attrClassifier.second, oldAcc);
+        } else {
+            double[] estimatedProbs = concurrentGetProbs(instances, instIndex, attrIndex, attrClassifier.first, attrsInstances);
+            int numValues = instances.attribute(attrIndex).numValues();
+            for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
+                score += estimatedProbs[valueIndex] *
+                        concurrentGetUtility(instances, instIndex, attrIndex, valueIndex, oldAcc);
+            }
         }
         return score;
     }
@@ -448,11 +464,11 @@ public class SEUErrorSampling extends AFAMethod {
     private static double[] concurrentGetProbs(Instances instances,
                                                int instIndex,
                                                int attrIndex,
-                                               J48[] attrsClassifiers,
+                                               J48 attrClassifier,
                                                Instances[] attrsInstances) throws Exception {
         Instance inst = new Instance(instances.instance(instIndex));
         inst.setDataset(attrsInstances[attrIndex]);
-        return attrsClassifiers[attrIndex].distributionForInstance(inst);
+        return attrClassifier.distributionForInstance(inst);
     }
 
     private static double concurrentGetUtility(Instances instances, int instIndex, int attrIndex, double valueIndex, double oldAcc) throws Exception {

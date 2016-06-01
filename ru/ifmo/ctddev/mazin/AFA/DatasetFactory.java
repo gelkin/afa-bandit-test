@@ -3,9 +3,12 @@ package ru.ifmo.ctddev.mazin.AFA;
 import weka.classifiers.trees.J48;
 import weka.core.Instance;
 import weka.core.Instances;
+import weka.core.converters.ArffSaver;
 import weka.filters.Filter;
 import weka.filters.supervised.attribute.Discretize;
 
+import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Array;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -44,6 +47,14 @@ public class DatasetFactory {
         classifier.setUseLaplace(true); // todo as in paper
         classifier.buildClassifier(instances);
         return classifier;
+    }
+
+    public static void writeInstancesToArff(Instances instances, String filename) throws IOException {
+        ArffSaver saver = new ArffSaver();
+        saver.setInstances(instances);
+        saver.setFile(new File(filename));
+//        saver.setDestination(new File("./data/test.arff"));   // **not** necessary in 3.5.4 and later
+        saver.writeBatch();
     }
 
     /**

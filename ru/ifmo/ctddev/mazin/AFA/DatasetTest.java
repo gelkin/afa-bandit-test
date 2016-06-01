@@ -31,8 +31,10 @@ public class DatasetTest {
 //            if (!test.coolDiscretizeTest(instances)) {
 //                System.out.println("Oh shi...");
 //            }
-//            Instances reducedInstances = DatasetFactory.reduceInstancesNumber(instances, 0.7);
-//            test.printAccuracyDifference(instances, datasetName);
+//            double percents = 0.1;
+//            Instances reducedInstances = DatasetFactory.reduceInstancesNumber(instances, percents);
+//            DatasetFactory.writeInstancesToArff(reducedInstances, RES_PATH + datasetName + "_reduced_" + percents + ".arff");
+//            test.printAccuracyDifference(reducedInstances, datasetName);
 
 //            Instances instances = test.deleteInstancesWithMissing(instances);
 //            for (int i = 0; i < dataSets.size(); ++i) {
@@ -63,16 +65,16 @@ public class DatasetTest {
 //
             // todo
 //            String prefix = RES_PATH;
-//            String fileDatasetName = "tic-tac-toe";
-//            String methodName = "AFABandit-Mixed-";
+//            String fileDatasetName = "car";
+//            String methodName = "SEU-ESparam=172";
+//            int num = 7288;
 //            Random r = new Random(System.currentTimeMillis());
 //            int suffixNum = r.nextInt(10000);
 //
-//            String filename1 = fileDatasetName + "_" + methodName + "-runs=10-folds=10-ALL_RUNS-6517.csv";
+//            String filename1 = fileDatasetName + "_" + methodName + "-runs=6-folds=10-ALL_RUNS-" + num + ".csv";
 //            Pair<Map<Integer, List<Double>>, String> methodResultAllRuns = new Pair<>(test.readAllRunsMethodResult(prefix + filename1), methodName + "-STATS-" + suffixNum);
 //            test.writeMethodResult(methodResultAllRuns, fileDatasetName);
-//
-//            // todo
+//          todo
 
 //            double beta;
 //            for (double alpha = 0.0; alpha < (1.0 + 0.001); alpha += 0.1) {
@@ -319,7 +321,7 @@ public class DatasetTest {
     public Pair<Map<Integer, List<Double>>, String> massiveTest(Instances instances, String datasetName) throws Exception {
         int seed = 137;
 
-        int runsNum = 6;
+        int runsNum = 10;
         int folds = 10;
         double percents = PERCENTS;
         double coef = (folds - 1) / (double) folds;

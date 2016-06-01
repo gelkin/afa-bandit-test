@@ -100,6 +100,8 @@ public class DatasetFactory {
      * Make deep copy of 'original' with random (percent * original.numInstances() * original.numAttributes())
      * values in 'original' dataset missing.
      *
+     * TODO: UPD also randomly choose one instance to leave full (needed for SEU method)
+     *
      * @param original original instances set
      * @param percent percent of all attributes that will be assumed missing.
      *                'percent' value has to belong to interval (0, 1) (exclusively).
@@ -109,8 +111,12 @@ public class DatasetFactory {
         if (percent >= 1.0 || percent <= 0.0) {
             throw new IllegalArgumentException("'percent' value has to belong to interval (0, 1) (exclusively)");
         }
+
         int n = original.numInstances();
         int m = original.numAttributes();
+
+//        Random r = new Random(System.currentTimeMillis() % 10000); // todo
+//        int instToLeaveFull = r.nextInt(n);
 
         Instances resInstances = new Instances(original);
         int classIndex = resInstances.classIndex();
@@ -118,6 +124,11 @@ public class DatasetFactory {
         if (classIndex < 0) {
             // no class attribute
             for (int i = 0; i < original.numInstances(); ++i) {
+                // todo
+//                if (i == instToLeaveFull) {
+//                    continue;
+//                }
+
                 for (int j = 0; j < original.numAttributes(); ++j) {
                     toBeMissingList.add(new Pair<>(i, j));
                 }
@@ -125,6 +136,11 @@ public class DatasetFactory {
         } else {
             // exclude class attribute
             for (int i = 0; i < original.numInstances(); ++i) {
+                // todo
+//                if (i == instToLeaveFull) {
+//                    continue;
+//                }
+
                 for (int j = 0; j < original.numAttributes(); ++j) {
                     if (j != classIndex) {
                         toBeMissingList.add(new Pair<>(i, j));
@@ -133,6 +149,7 @@ public class DatasetFactory {
             }
         }
 
+//        int numOfValuesToSetMissing = (int) ((toBeMissingList.size() + (m - 1)) * percent); // todo '+ (m - 1)' as we skipped 'instToLeaveFull' instance
         int numOfValuesToSetMissing = (int) (toBeMissingList.size() * percent);
         Collections.shuffle(toBeMissingList);
         toBeMissingList = toBeMissingList.subList(0, numOfValuesToSetMissing);

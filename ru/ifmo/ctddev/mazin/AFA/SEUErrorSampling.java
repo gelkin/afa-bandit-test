@@ -150,7 +150,7 @@ public class SEUErrorSampling extends AFAMethod {
             }
         }
         execSvc.shutdown();
-        boolean finshed = execSvc.awaitTermination(Long.MAX_VALUE, TimeUnit.MINUTES); // todo
+        execSvc.awaitTermination(Long.MAX_VALUE, TimeUnit.MINUTES); // todo
 
         // Choose best 'b' queries to acquire:
         Collections.sort(scores, (o1, o2) -> o1.first < o2.first ? 1 : o1.first.equals(o2.first) ? 0 : -1);
@@ -414,7 +414,8 @@ public class SEUErrorSampling extends AFAMethod {
         public List<Pair<Double, Pair<Integer, Integer>>> scores;
         public final double oldAcc;
 
-        CodeRunner(Instances instances, int instIndex, int attrIndex, List<Pair<Double, Pair<Integer, Integer>>> scores, double oldAcc) {
+        CodeRunner(Instances instances, int instIndex, int attrIndex, List<Pair<Double,
+                   Pair<Integer, Integer>>> scores, double oldAcc) {
             this.instances = instances;
             this.instIndex = instIndex;
             this.attrIndex = attrIndex;
@@ -425,8 +426,7 @@ public class SEUErrorSampling extends AFAMethod {
         @Override
         public void run() {
             try {
-                double score;
-                score = concurrentGetScore(instances, instIndex, attrIndex, oldAcc, attrsClassifiers, attrsInstances);
+                double score = concurrentGetScore(instances, instIndex, attrIndex, oldAcc, attrsClassifiers, attrsInstances);
                 scores.add(new Pair<>(score, new Pair<>(instIndex, attrIndex)));
 
                 // todo what
@@ -437,48 +437,52 @@ public class SEUErrorSampling extends AFAMethod {
             }
         }
 
-    }
-
-    private static double concurrentGetScore(Instances instances,
-                                             int instIndex,
-                                             int attrIndex,
-                                             double oldAcc,
-                                             Pair<J48, Integer>[] attrsClassifiers,
-                                             Instances[] attrsInstances) throws Exception {
-        double score = 0.0;
-
-        Pair<J48, Integer> attrClassifier = attrsClassifiers[attrIndex];
-        if (attrClassifier.first == null) {
-            score = concurrentGetUtility(instances, instIndex, attrIndex, attrClassifier.second, oldAcc);
-        } else {
-            double[] estimatedProbs = concurrentGetProbs(instances, instIndex, attrIndex, attrClassifier.first, attrsInstances);
-            int numValues = instances.attribute(attrIndex).numValues();
-            for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
-                score += estimatedProbs[valueIndex] *
-                        concurrentGetUtility(instances, instIndex, attrIndex, valueIndex, oldAcc);
+        private double concurrentGetScore(Instances instances,
+                                         int instIndex,
+                                         int attrIndex,
+                                         double oldAcc,
+                                         Pair<J48, Integer>[] attrsClassifiers,
+                                         Instances[] attrsInstances) throws Exception {
+            double score = 0.0;
+            Pair<J48, Integer> attrClassifier = attrsClassifiers[attrIndex];
+            if (attrClassifier.first == null) {
+                if (attrClassifier.second == -1) {
+                    int x = 0;
+                }
+                score = concurrentGetUtility(instances, instIndex, attrIndex, (double) attrClassifier.second, oldAcc);
+            } else {
+                double[] estimatedProbs = concurrentGetProbs(instances, instIndex, attrIndex, attrClassifier.first, attrsInstances);
+                int numValues = instances.attribute(attrIndex).numValues();
+                for (int valueIndex = 0; valueIndex < numValues; ++valueIndex) {
+                    score += estimatedProbs[valueIndex] *
+                            concurrentGetUtility(instances, instIndex, attrIndex, valueIndex, oldAcc);
+                }
             }
+            return score;
         }
-        return score;
+
+        private double[] concurrentGetProbs(Instances instances,
+                                                   int instIndex,
+                                                   int attrIndex,
+                                                   J48 attrClassifier,
+                                                   Instances[] attrsInstances) throws Exception {
+            Instance inst = new Instance(instances.instance(instIndex));
+            inst.setDataset(attrsInstances[attrIndex]);
+            return attrClassifier.distributionForInstance(inst);
+        }
+
+        private double concurrentGetUtility(Instances instances, int instIndex, int attrIndex, double valueIndex, double oldAcc) throws Exception {
+            instances.instance(instIndex).setValue(attrIndex, valueIndex);
+            J48 newClassifier = DatasetFactory.staticMakeClassifier(instances);
+            double newAcc = DatasetFactory.calculateAccuracy(newClassifier, instances);
+            instances.instance(instIndex).setMissing(attrIndex);
+
+            return newAcc - oldAcc;
+        }
+
     }
 
-    private static double[] concurrentGetProbs(Instances instances,
-                                               int instIndex,
-                                               int attrIndex,
-                                               J48 attrClassifier,
-                                               Instances[] attrsInstances) throws Exception {
-        Instance inst = new Instance(instances.instance(instIndex));
-        inst.setDataset(attrsInstances[attrIndex]);
-        return attrClassifier.distributionForInstance(inst);
-    }
 
-    private static double concurrentGetUtility(Instances instances, int instIndex, int attrIndex, double valueIndex, double oldAcc) throws Exception {
-        instances.instance(instIndex).setValue(attrIndex, valueIndex);
-        J48 newClassifier = DatasetFactory.staticMakeClassifier(instances);
-        double newAcc = DatasetFactory.calculateAccuracy(newClassifier, instances);
-        instances.instance(instIndex).setMissing(attrIndex);
-
-        return newAcc - oldAcc;
-    }
 
     public int getRealPossibleQueries() {
         return realPossibleQueries;

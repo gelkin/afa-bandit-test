@@ -7,6 +7,7 @@ import weka.core.Instances;
 import weka.core.converters.ConverterUtils;
 import weka.filters.Filter;
 import weka.filters.supervised.attribute.Discretize;
+import weka.filters.unsupervised.attribute.Remove;
 
 import java.io.*;
 import java.text.DecimalFormat;
@@ -33,8 +34,19 @@ public class DatasetTest {
 //            }
 //            double percents = 0.1;
 //            Instances reducedInstances = DatasetFactory.reduceInstancesNumber(instances, percents);
-//            DatasetFactory.writeInstancesToArff(reducedInstances, RES_PATH + datasetName + "_reduced_" + percents + ".arff");
-//            test.printAccuracyDifference(reducedInstances, datasetName);
+
+//            test.printMissingValueInfo(instances);
+//
+//            Remove remove;
+//            remove = new Remove();
+//            remove.setAttributeIndices("6,8");
+//            remove.setInputFormat(instances);
+//            Instances instNew = Filter.useFilter(instances, remove);
+//
+//            test.printMissingValueInfo(instNew);
+//
+//            DatasetFactory.writeInstancesToArff(instNew, RES_PATH + datasetName + "_no_missing.arff");
+//            test.printAccuracyDifference(instances, datasetName);
 
 //            Instances instances = test.deleteInstancesWithMissing(instances);
 //            for (int i = 0; i < dataSets.size(); ++i) {
@@ -46,6 +58,7 @@ public class DatasetTest {
 ////                Pair<Map<Integer, Double>, String> methodResult = test.massiveTest(instances, datasetName);
 ////                String filename = test.writeMethodResult(methodResult, datasetName);
 //            }
+//            Pair<Map<Integer, List<Double>>, String> methodResult = test.massiveTest(reducedInstances, datasetName);
             Pair<Map<Integer, List<Double>>, String> methodResult = test.massiveTest(instances, datasetName);
             String filename = test.writeMethodResult(methodResult, datasetName);
 
@@ -65,13 +78,13 @@ public class DatasetTest {
 //
             // todo
 //            String prefix = RES_PATH;
-//            String fileDatasetName = "vowel";
-//            String methodName = "SEU-ESparam=99";
-//            int num = 9356;
+//            String fileDatasetName = "audiology";
+//            String methodName = "AFABandit-Attr-";
+//            int num = 8391;
 //            Random r = new Random(System.currentTimeMillis());
 //            int suffixNum = r.nextInt(10000);
 //
-//            String filename1 = fileDatasetName + "_" + methodName + "-runs=6-folds=10-ALL_RUNS-" + num + ".csv";
+//            String filename1 = fileDatasetName + "_" + methodName + "-runs=10-folds=10-ALL_RUNS-" + num + ".csv";
 //            Pair<Map<Integer, List<Double>>, String> methodResultAllRuns = new Pair<>(test.readAllRunsMethodResult(prefix + filename1), methodName + "-STATS-" + suffixNum);
 //            test.writeMethodResult(methodResultAllRuns, fileDatasetName);
 //          todo
@@ -101,6 +114,21 @@ public class DatasetTest {
 //            test.seuErrorSamplingTest(instances);
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    public void printMissingValueInfo(Instances instances) {
+        int[] missingAttrs = new int[instances.numAttributes() - 1];
+        for (int i = 0; i < instances.numInstances(); ++i) {
+            for (int j = 0; j < instances.numAttributes() - 1; ++j) {
+                if (Instance.isMissingValue(instances.instance(i).value(j))) {
+                    missingAttrs[j]++;
+                }
+            }
+        }
+
+        for (int j = 0; j < instances.numAttributes() - 1; ++j) {
+            System.out.println(String.format("j = %s, missing = %s", j, missingAttrs[j]));
         }
     }
 
@@ -321,7 +349,7 @@ public class DatasetTest {
     public Pair<Map<Integer, List<Double>>, String> massiveTest(Instances instances, String datasetName) throws Exception {
         int seed = 137;
 
-        int runsNum = 10;
+        int runsNum = 6;
         int folds = 10;
         double percents = PERCENTS;
         double coef = (folds - 1) / (double) folds;

@@ -188,7 +188,7 @@ public class AFABandit extends AFAMethod {
         for (Map.Entry<Integer, Set<Integer>> entry : possibleQueries.entrySet()) {
             int i = entry.getKey();
             for (Integer j : entry.getValue()) {
-                double score = getScoreAttr(i, j);
+                double score = getScoreMixed(i, j);
                 scores.add(new Pair<>(score, new Pair<>(i, j)));
 //                if (score < Double.MAX_VALUE && score > Double.MIN_VALUE) {
 //                    System.out.print(String.format("(%s, %s, %s), ", i, j, Double.valueOf(df.format(score))));

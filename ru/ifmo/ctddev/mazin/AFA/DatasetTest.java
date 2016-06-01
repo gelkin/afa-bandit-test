@@ -65,9 +65,9 @@ public class DatasetTest {
 //
             // todo
 //            String prefix = RES_PATH;
-//            String fileDatasetName = "car";
-//            String methodName = "SEU-ESparam=172";
-//            int num = 7288;
+//            String fileDatasetName = "vowel";
+//            String methodName = "SEU-ESparam=99";
+//            int num = 9356;
 //            Random r = new Random(System.currentTimeMillis());
 //            int suffixNum = r.nextInt(10000);
 //
@@ -321,7 +321,7 @@ public class DatasetTest {
     public Pair<Map<Integer, List<Double>>, String> massiveTest(Instances instances, String datasetName) throws Exception {
         int seed = 137;
 
-        int runsNum = 6;
+        int runsNum = 10;
         int folds = 10;
         double percents = PERCENTS;
         double coef = (folds - 1) / (double) folds;
